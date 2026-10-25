@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<title>Favoriten-Archiv</title>
+<style>
+:root{--bg:#121214;--panel:#1b1b1f;--panel2:#24242a;--line:#2e2e36;--text:#e9e9ee;--muted:#9a9aa6;--accent:#ed2553;--accent2:#ff5c82;--ok:#2fbf71;--bad:#ff4d5e;--warn:#f0b429;--r:10px}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+button:hover{border-color:#4a4a55}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:var(--accent2)}
+.danger{color:var(--bad)!important}
+.icon{padding:7px 11px}
+input,select,textarea{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+a{color:var(--accent2)}
+.muted{color:var(--muted)}
+.hidden{display:none!important}
+
+header{position:sticky;top:0;z-index:20;display:flex;gap:10px;align-items:center;padding:10px 16px;height:57px;background:rgba(18,18,20,.93);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.brand{font-weight:800;letter-spacing:.3px;white-space:nowrap}
+.brand span{color:var(--accent);margin-left:3px}
+.searchwrap{flex:1;min-width:0}
+.searchwrap input{width:100%}
+.menu{position:relative}
+.pop{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:6px;display:flex;flex-direction:column;min-width:250px;box-shadow:0 12px 32px rgba(0,0,0,.55)}
+.pop button{background:none;border:none;text-align:left;padding:9px 10px}
+.pop button:hover{background:var(--panel2)}
+.only-mobile{display:none}
+
+#layout{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 57px)}
+aside{border-right:1px solid var(--line);padding:14px;position:sticky;top:57px;height:calc(100vh - 57px);overflow:auto;background:var(--bg)}
+aside section{margin-bottom:20px}
+aside h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;display:flex;align-items:center;justify-content:space-between;gap:6px}
+aside h3 select{font-size:11px;padding:2px 6px;text-transform:none;letter-spacing:0}
+aside > section > select{width:100%}
+.seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{flex:1;background:none;border:none;padding:6px 4px;border-radius:6px;font-size:13px}
+.seg button.on{background:var(--accent);color:#fff}
+.check{display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer}
+.facet{display:flex;justify-content:space-between;gap:8px;padding:4px 7px;border-radius:6px;cursor:pointer}
+.facet:hover{background:var(--panel2)}
+.facet .n{color:var(--muted);font-variant-numeric:tabular-nums}
+.facet.on{background:rgba(237,37,83,.16)}
+.facet .del{opacity:0;color:var(--muted);padding:0 4px}
+.facet:hover .del{opacity:1}
+.stat{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+
+main{padding:14px 16px 60px;min-width:0}
+#bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;min-height:30px}
+#count{color:var(--muted);margin-right:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:12.5px;background:var(--panel2);border:1px solid var(--line);cursor:pointer;user-select:none}
+.chip:hover{border-color:#55555f}
+.chip .t{color:var(--muted);font-size:11px}
+.chip.inc{border-color:var(--ok);background:rgba(47,191,113,.13)}
+.chip.exc{border-color:var(--bad);background:rgba(255,77,94,.13)}
+.chip.exc .nm{text-decoration:line-through}
+.chip .x{opacity:.6}
+.chip.add{border-color:var(--ok);color:#8ff0bb;cursor:default}
+.chip.rem{border-color:var(--bad);color:#ffadb5;cursor:default}
+.linkbtn{background:none;border:none;color:var(--accent2);padding:3px 6px}
+
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:16px 14px}
+.card{cursor:pointer;min-width:0}
+.cover{position:relative;aspect-ratio:7/10;border-radius:var(--r);overflow:hidden;background:var(--panel2)}
+.cover img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s,filter .25s}
+.card:hover .cover img{transform:scale(1.035)}
+.ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:12px;text-align:center;color:var(--muted);font-size:12px}
+.badges{position:absolute;z-index:2;left:6px;right:6px;bottom:6px;display:flex;gap:4px;flex-wrap:wrap}
+.b{background:rgba(0,0,0,.75);border-radius:5px;padding:1px 6px;font-size:11px;font-weight:600}
+.b.read{background:var(--ok);color:#06210f}
+.b.rm{background:var(--warn);color:#2a1d00}
+.b.star{color:#ffd166}
+.card .t{margin-top:7px;font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .s{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.discreet .cover img,body.discreet .dcover img,body.discreet .thumb img{filter:blur(16px) saturate(.5)}
+body.discreet .card:hover .cover img,body.discreet .dcover:hover img{filter:none}
+
+#empty{max-width:640px;margin:8vh auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px}
+#empty h2{margin-top:0}
+#empty ol{padding-left:20px}
+#empty li{margin-bottom:6px}
+
+.overlay{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.68);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(1000px,100%);padding:22px;position:relative;margin-bottom:4vh}
+.dialog h2{margin:0 36px 12px 0;font-size:19px;line-height:1.3}
+.close{position:absolute;top:12px;right:12px}
+.detail{display:grid;grid-template-columns:260px 1fr;gap:22px}
+.dcover{border-radius:var(--r);overflow:hidden;aspect-ratio:7/10;background:var(--panel2)}
+.dcover img{width:100%;height:100%;object-fit:cover;display:block;transition:filter .25s}
+.jp{color:var(--muted);font-size:13px;margin:-6px 0 12px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--muted);font-size:13px;margin-bottom:6px}
+.tg{display:grid;grid-template-columns:92px 1fr;gap:7px 10px;margin:14px 0}
+.tg .l{color:var(--muted);font-size:12px;padding-top:4px}
+.tg .v{display:flex;flex-wrap:wrap;gap:5px}
+.lbl{color:var(--muted);font-size:12px;margin-bottom:5px}
+.stars{display:flex;gap:2px;font-size:22px;line-height:1}
+.stars span{cursor:pointer;color:#4a4a52}
+.stars span.on{color:#ffd166}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.personal{border-top:1px solid var(--line);margin-top:14px;padding-top:14px;display:grid;gap:14px}
+textarea{width:100%;min-height:70px;resize:vertical}
+.listbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.listbox input[type=checkbox]{margin:0;accent-color:var(--accent)}
+.warnbox{background:rgba(240,180,41,.1);border:1px solid rgba(240,180,41,.4);border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:13px}
+.warnbox button{margin:6px 6px 0 0;padding:4px 10px}
+
+.sum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.pill{border-radius:999px;padding:4px 12px;background:var(--panel2);border:1px solid var(--line);font-weight:600;font-size:13px}
+.pill.ok{border-color:var(--ok);color:#8ff0bb}
+.pill.warn{border-color:var(--warn);color:#ffd77a}
+.pill.bad{border-color:var(--bad);color:#ffadb5}
+.rvsec{border:1px solid var(--line);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.rvhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:var(--panel2)}
+.rvhead b{flex:1}
+.rvhead button{padding:4px 10px;font-size:12.5px}
+.rvlist{max-height:46vh;overflow:auto}
+.rv{display:grid;grid-template-columns:auto 44px 1fr;gap:10px;align-items:start;padding:8px 12px;border-top:1px solid var(--line);cursor:pointer}
+.rv input{margin-top:14px;accent-color:var(--accent)}
+.thumb{width:44px;aspect-ratio:7/10;border-radius:5px;overflow:hidden;background:var(--panel)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rv small{color:var(--muted);display:block}
+.diff{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;align-items:center}
+.diff .dl{font-size:11px;color:var(--muted);margin-left:4px}
+.more{padding:8px 12px;color:var(--muted);border-top:1px solid var(--line);font-size:12.5px}
+.foot{justify-content:flex-end;margin-top:6px}
+.help h3{margin:18px 0 6px}
+.help code{background:var(--panel2);padding:1px 6px;border-radius:5px}
+.help li{margin-bottom:5px}
+
+#reader{position:fixed;inset:0;z-index:60;background:#000;display:flex;flex-direction:column}
+.rbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(22,22,24,.97);border-bottom:1px solid #222}
+.rbar .rt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.rbar input[type=range]{width:160px;accent-color:var(--accent);padding:0}
+#rpos{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+#rstage{flex:1;min-height:0;overflow:auto;display:flex;justify-content:center}
+#rstage.single{align-items:center;cursor:pointer;user-select:none}
+#rstage.single img{max-width:100%;max-height:100%;object-fit:contain}
+#rstage.single.fitw{align-items:flex-start}
+#rstage.single.fitw img{max-height:none;width:min(100%,1100px)}
+#rstage.scroll{flex-direction:column;align-items:center}
+#rstage.scroll img{width:min(100%,1000px);display:block;min-height:70vh;background:#0d0d0f}
+#rstage.scroll img.ok{min-height:0;background:none}
+#rstage.scroll.fitw img{width:100%;max-width:none}
+
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:90;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+#toast.on{opacity:1}
+#drop{position:fixed;inset:12px;z-index:100;border:3px dashed var(--accent);border-radius:18px;background:rgba(18,18,20,.88);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;pointer-events:none}
+
+@media (max-width:820px){
+  .only-mobile{display:inline-block}
+  .brand{display:none}
+  .hide-mobile{display:none}
+  #layout{grid-template-columns:1fr}
+  aside{position:fixed;left:0;top:57px;bottom:0;width:285px;height:auto;z-index:30;border-right:1px solid var(--line);transform:translateX(-102%);transition:transform .2s}
+  aside.open{transform:none;box-shadow:10px 0 30px rgba(0,0,0,.5)}
+  .detail{grid-template-columns:1fr}
+  .dcover{max-width:230px}
+  #grid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px 10px}
+  .tg{grid-template-columns:1fr}
+  .tg .l{padding-top:6px}
+  .rbar input[type=range]{width:90px}
+  .dialog{padding:16px}
+}
+</style>
+</head>
+<body>
+<header>
+  <button id="btnSide" class="icon only-mobile" title="Filter">☰</button>
+  <div class="brand">Favoriten<span>Archiv</span></div>
+  <div class="searchwrap"><input id="q" list="tagList" placeholder="Suchen: Titel, Tag, Künstler, ID, Notiz …   ( / )" autocomplete="off" spellcheck="false"><datalist id="tagList"></datalist></div>
+  <button id="btnImport" class="primary">⬆<span class="hide-mobile"> Import / Update</span></button>
+  <div class="menu">
+    <button id="btnMenu" class="icon" title="Menü">⋯</button>
+    <div id="menuPop" class="pop hidden">
+      <button data-act="backup">💾 Backup exportieren (JSON)</button>
+      <button data-act="restore">♻️ Backup einspielen</button>
+      <button data-act="csv">📄 Archiv als CSV exportieren</button>
+      <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
+      <button data-act="help">❓ Anleitung</button>
+      <button data-act="wipe" class="danger">🗑 Archiv komplett löschen</button>
+    </div>
+  </div>
+</header>
+
+<div id="layout">
+  <aside id="side">
+    <section>
+      <h3>Sortierung</h3>
+      <select id="sort">
+        <option value="fav">Favoriten-Reihenfolge (neueste zuerst)</option>
+        <option value="added">Zuletzt ins Archiv aufgenommen</option>
+        <option value="up_new">Upload-Datum: neu → alt</option>
+        <option value="up_old">Upload-Datum: alt → neu</option>
+        <option value="rating">Eigene Bewertung</option>
+        <option value="pages_d">Seiten: viele → wenige</option>
+        <option value="pages_a">Seiten: wenige → viele</option>
+        <option value="title">Titel A–Z</option>
+        <option value="id">Galerie-ID (neueste)</option>
+        <option value="random">Zufällig 🎲</option>
+      </select>
+    </section>
+    <section>
+      <h3>Status</h3>
+      <div class="seg" id="segStatus">
+        <button data-status="active" class="on">Favoriten</button>
+        <button data-status="removed">Entfernt</button>
+        <button data-status="all">Alle</button>
+      </div>
+      <label class="check"><input type="checkbox" id="fUnread"> Nur ungelesene</label>
+      <div class="row" style="margin-top:8px"><span class="muted" style="font-size:13px">Bewertung ab</span>
+        <select id="fRating" style="flex:1"><option value="0">egal</option><option value="1">★</option><option value="2">★★</option><option value="3">★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option></select>
+      </div>
+    </section>
+    <section>
+      <h3>Eigene Listen</h3>
+      <div id="lists"></div>
+      <input id="newList" placeholder="+ neue Liste" style="width:100%;margin-top:6px">
+    </section>
+    <section>
+      <h3><span>Häufigste</span><select id="facetType"></select></h3>
+      <div id="facets"></div>
+    </section>
+    <div class="stat" id="stat"></div>
+  </aside>
+
+  <main>
+    <div id="bar"><span id="count"></span><span id="chips" class="row"></span></div>
+    <div id="grid"></div>
+    <div id="sentinel" style="height:1px"></div>
+    <div id="empty" class="hidden">
+      <h2>Noch keine Favoriten im Archiv</h2>
+      <ol>
+        <li>Userscript <b>„nhentai Favoriten-Archiv Sync“</b> in Tampermonkey installieren.</li>
+        <li>Auf nhentai.net deine Favoriten öffnen und <b>„🆕 Neue holen“</b> klicken – es lädt eine JSON-Datei herunter.</li>
+        <li>Die Datei hier per <b>Import</b> oder Drag &amp; Drop einlesen.</li>
+      </ol>
+      <p class="muted">Eine CSV aus deinem bisherigen Skript (v2.1) funktioniert auch – fehlende Details ergänzt das nächste Update automatisch.</p>
+      <div class="row"><button class="primary" id="emptyImport">Datei importieren</button><button id="emptyHelp">Anleitung</button></div>
+    </div>
+  </main>
+</div>
+
+<div id="reader" class="hidden">
+  <div class="rbar">
+    <button class="icon" id="rClose" title="Schließen (Esc)">✕</button>
+    <span class="rt" id="rTitle"></span>
+    <input type="range" id="rRange" min="1" max="1" value="1">
+    <span id="rpos"></span>
+    <select id="rMode"><option value="single">Einzelseite</option><option value="scroll">Scrollen</option></select>
+    <button class="icon" id="rFit" title="Breite/Höhe anpassen (F)">↔</button>
+  </div>
+  <div id="rstage"></div>
+</div>
+
+<div id="modal" class="overlay hidden"><div class="dialog" id="modalBody"></div></div>
+<input type="file" id="fileImport" accept=".json,.csv,application/json,text/csv" multiple hidden>
+<input type="file" id="fileRestore" accept=".json,application/json" hidden>
+<div id="toast"></div>
+<div id="drop" class="hidden">Datei hier ablegen zum Importieren</div>
+
+<script>
+'use strict';
+/* ---------- Konstanten & Helfer ---------- */
+const TAG_TYPES = ['parody','character','tag','artist','group','language','category'];
+const TYPE_LABEL = {parody:'Parodien',character:'Charaktere',tag:'Tags',artist:'Künstler',group:'Gruppen',language:'Sprachen',category:'Kategorien'};
+const TYPE_KEY = {parody:'parodie',character:'charakter',tag:'tag',artist:'künstler',group:'gruppe',language:'sprache',category:'kategorie'};
+const KEY_TYPE = Object.fromEntries(Object.entries(TYPE_KEY).map(([a,b]) => [b,a]));
+const PAGE_SIZE = 60;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2,'0');
+const today = () => new Date().toISOString().slice(0,10);
+const defUser = () => ({rating:0, read:false, notes:'', lists:[], last_page:0});
+const ls = {get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v);}catch{return d;}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}};
+
+const S = {
+  all: new Map(), meta: {lists:[]},
+  f: {q:'', chips:[], status:'active', unread:false, minRating:0, list:null},
+  sort: 'fav', view: [], shown: 0, facetType: 'tag',
+  modal: null, detailId: null, rv: null, rnd: new Map(), tagKeys: new Set()
+};
+
+/* ---------- IndexedDB ---------- */
+const DB = {
+  db: null,
+  open(){ return new Promise((res,rej) => {
+    const r = indexedDB.open('nh-fav-archiv', 1);
+    r.onupgradeneeded = () => { const d = r.result;
+      if (!d.objectStoreNames.contains('g')) d.createObjectStore('g', {keyPath:'id'});
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta'); };
+    r.onsuccess = () => { this.db = r.result; res(); };
+    r.onerror = () => rej(r.error);
+  });},
+  run(store, mode, fn){ return new Promise((res,rej) => {
+    const tx = this.db.transaction(store, mode); const out = fn(tx.objectStore(store));
+    tx.oncomplete = () => res(out ? out.result : undefined);
+    tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+  });},
+  all(){ return this.run('g','readonly', s => s.getAll()); },
+  put(list){ return this.run('g','readwrite', s => { list.forEach(x => s.put(x)); }); },
+  del(ids){ return this.run('g','readwrite', s => { ids.forEach(id => s.delete(id)); }); },
+  clear(){ return this.run('g','readwrite', s => { s.clear(); }); },
+  getMeta(){ return this.run('meta','readonly', s => s.get('meta')); },
+  setMeta(v){ return this.run('meta','readwrite', s => { s.put(v,'meta'); }); }
+};
+const saveTimers = new Map();
+function saveSoon(g){ clearTimeout(saveTimers.get(g.id)); saveTimers.set(g.id, setTimeout(() => { saveTimers.delete(g.id); DB.put([g]); }, 400)); }
+function saveMeta(){ DB.setMeta(S.meta); }
+
+/* ---------- Bilder (mit Fallback über Server & Dateiendungen) ---------- */
+const hostMemo = {page:null, thumb:null};
+function candidates(kind, g, page){
+  const out = [];
+  if (kind === 'page' && g.page_urls && g.page_urls[page-1]) out.push(g.page_urls[page-1]);
+  if (kind === 'cover' && g.cover_url) out.push(g.cover_url);
+  if (!g.media_id) return out;
+  const pref = kind === 'page' ? (g.page_exts?.[page-1] || g.page_exts?.[0] || g.default_ext || 'jpg')
+                               : ((g.cover_url||'').match(/\/cover\.([a-z]+)/i)?.[1] || g.page_exts?.[0] || g.default_ext || 'jpg');
+  const exts = [...new Set([pref,'webp','jpg','png','gif'])];
+  const hosts = kind === 'page' ? ['i','i1','i2','i3','i4'] : ['t','t1','t2','t3','t4'];
+  const key = kind === 'page' ? 'page' : 'thumb';
+  const first = hostMemo[key] || hosts[0];
+  const hs = [first, ...hosts.filter(h => h !== first)];
+  const file = kind === 'page' ? page : 'cover';
+  for (const e of exts) out.push(`https://${hs[0]}.nhentai.net/galleries/${g.media_id}/${file}.${e}`);
+  for (const h of hs.slice(1)) out.push(`https://${h}.nhentai.net/galleries/${g.media_id}/${file}.${pref}`);
+  return [...new Set(out)];
+}
+function loadImg(img, kind, g, page){
+  const c = candidates(kind, g, page);
+  img.referrerPolicy = 'no-referrer';
+  if (!c.length) { img.style.visibility = 'hidden'; return; }
+  let i = 0;
+  img.onerror = () => { i++; if (i < c.length) img.src = c[i]; else { img.onerror = null; img.style.visibility = 'hidden'; } };
+  img.onload = () => { const m = img.src.match(/^https:\/\/(\w+)\.nhentai\.net\/galleries/); if (m) hostMemo[kind === 'page' ? 'page' : 'thumb'] = m[1]; };
+  img.src = c[0];
+}
+
+/* ---------- Anzeige-Helfer ---------- */
+const dispTitle = g => g.title_pretty || g.title_english || g.title_japanese || ('#' + g.id);
+function langCode(g){
+  const l = (g.tags.language||[]).filter(x => !['translated','rewrite','speechless','text cleaned'].includes(x))[0];
+  return l ? ({english:'EN',japanese:'JP',chinese:'CN',korean:'KR',spanish:'ES',german:'DE',french:'FR',russian:'RU'}[l] || l.slice(0,2).toUpperCase()) : '';
+}
+function fmtDate(iso){ const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso||''); return m ? `${m[3]}.${m[2]}.${m[1]}` : '–'; }
+function fmtTs(ts){ return ts ? new Date(ts).toLocaleDateString('de-DE') : '–'; }
+let toastT;
+function toast(msg, ms=3500){ const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms); }
+function download(name, content, type){
+  const url = URL.createObjectURL(new Blob([content], {type}));
+  const a = Object.assign(document.createElement('a'), {href:url, download:name});
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ---------- Suche & Filter ---------- */
+const hayCache = new WeakMap();
+function hay(g){
+  let h = hayCache.get(g);
+  if (!h) { h = [g.id, g.title_english, g.title_japanese, g.title_pretty, ...TAG_TYPES.flatMap(t => g.tags[t]||[]), g.user.notes, ...(g.user.lists||[])].join('\n').toLowerCase(); hayCache.set(g, h); }
+  return h;
+}
+function parseQ(q){
+  const terms = []; const re = /(-?)"([^"]+)"|(-?)(\S+)/g; let m;
+  while ((m = re.exec(q))) { if (m[2]) terms.push({neg:!!m[1], t:m[2].toLowerCase()}); else terms.push({neg:!!m[3], t:m[4].toLowerCase()}); }
+  return terms.filter(x => x.t);
+}
+function sorter(){
+  const fi = (a,b) => (a.fav_index ?? 0) - (b.fav_index ?? 0);
+  switch (S.sort) {
+    case 'added': return (a,b) => (b.added_at||0) - (a.added_at||0) || fi(a,b);
+    case 'up_new': return (a,b) => (b.upload_date||'').localeCompare(a.upload_date||'') || fi(a,b);
+    case 'up_old': return (a,b) => (a.upload_date||'9').localeCompare(b.upload_date||'9') || fi(a,b);
+    case 'rating': return (a,b) => (b.user.rating||0) - (a.user.rating||0) || fi(a,b);
+    case 'pages_d': return (a,b) => (b.pages||0) - (a.pages||0) || fi(a,b);
+    case 'pages_a': return (a,b) => (a.pages||0) - (b.pages||0) || fi(a,b);
+    case 'title': return (a,b) => dispTitle(a).localeCompare(dispTitle(b), 'de', {sensitivity:'base'});
+    case 'id': return (a,b) => Number(b.id) - Number(a.id);
+    case 'random': return (a,b) => rnd(a) - rnd(b);
+    default: return fi;
+  }
+}
+function rnd(g){ let r = S.rnd.get(g.id); if (r === undefined) { r = Math.random(); S.rnd.set(g.id, r); } return r; }
+function computeView(){
+  const f = S.f, terms = parseQ(f.q), v = [];
+  for (const g of S.all.values()) {
+    if (f.status !== 'all' && g.status !== f.status) continue;
+    if (f.unread && g.user.read) continue;
+    if (f.minRating && (g.user.rating||0) < f.minRating) continue;
+    if (f.list && !(g.user.lists||[]).includes(f.list)) continue;
+    let ok = true;
+    for (const c of f.chips) { const has = (g.tags[c.type]||[]).includes(c.name); if ((c.mode === 'inc') !== has) { ok = false; break; } }
+    if (!ok) continue;
+    if (terms.length) { const h = hay(g); for (const t of terms) if (h.includes(t.t) === t.neg) { ok = false; break; } if (!ok) continue; }
+    v.push(g);
+  }
+  v.sort(sorter());
+  S.view = v;
+}
+function addChip(type, name, mode='inc'){
+  const ex = S.f.chips.find(c => c.type === type && c.name === name);
+  if (ex) ex.mode = mode; else S.f.chips.push({type, name, mode});
+  render();
+}
+
+/* ---------- Rendering ---------- */
+function card(g){
+  const d = document.createElement('div'); d.className = 'card'; d.dataset.id = g.id;
+  const lang = langCode(g), r = g.user.rating||0;
+  d.innerHTML = `<div class="cover"><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
+    <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}</div></div>
+    <div class="t">${esc(dispTitle(g))}</div><div class="s">${esc((g.tags.artist||[]).join(', ') || (g.tags.group||[]).join(', ') || (g.tags.parody||[]).join(', ') || '–')}</div>`;
+  const img = d.querySelector('img'); img.loading = 'lazy'; loadImg(img, 'cover', g);
+  return d;
+}
+function replaceCard(g){ const el = document.querySelector(`.card[data-id="${g.id}"]`); if (el) el.replaceWith(card(g)); }
+function render(){
+  computeView(); S.shown = 0; $('#grid').innerHTML = '';
+  renderMore(); renderBar(); renderFacets(); renderLists(); renderStat();
+  $('#empty').classList.toggle('hidden', S.all.size > 0);
+  requestAnimationFrame(checkMore);
+}
+function renderMore(){
+  const frag = document.createDocumentFragment(), end = Math.min(S.view.length, S.shown + PAGE_SIZE);
+  for (let i = S.shown; i < end; i++) frag.appendChild(card(S.view[i]));
+  S.shown = end; $('#grid').appendChild(frag);
+}
+function checkMore(){
+  if (S.shown >= S.view.length) return;
+  if ($('#sentinel').getBoundingClientRect().top < innerHeight + 900) { renderMore(); requestAnimationFrame(checkMore); }
+}
+function renderBar(){
+  const total = [...S.all.values()].filter(g => S.f.status === 'all' || g.status === S.f.status).length;
+  $('#count').textContent = S.view.length === total ? `${total} Einträge` : `${S.view.length} von ${total}`;
+  const chips = S.f.chips.map((c,i) => `<span class="chip ${c.mode}" data-chip="${i}" title="Klick: einschließen ↔ ausschließen"><span class="t">${esc(TYPE_KEY[c.type])}</span><span class="nm">${esc(c.name)}</span><span class="x" data-chipx="${i}">✕</span></span>`);
+  if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(S.f.list)}<span class="x">✕</span></span>`);
+  const any = chips.length || S.f.q || S.f.unread || S.f.minRating;
+  $('#chips').innerHTML = chips.join('') + (any ? `<button class="linkbtn" id="resetF">Filter zurücksetzen</button>` : '');
+}
+function renderFacets(){
+  const t = S.facetType, cnt = new Map();
+  for (const g of S.view) for (const n of (g.tags[t]||[])) cnt.set(n, (cnt.get(n)||0) + 1);
+  const top = [...cnt].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).slice(0, 40);
+  $('#facets').innerHTML = top.length ? top.map(([n,c]) => {
+    const on = S.f.chips.some(x => x.type === t && x.name === n);
+    return `<div class="facet ${on?'on':''}" data-ft="${esc(t)}" data-fn="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen"><span>${esc(n)}</span><span class="n">${c}</span></div>`;
+  }).join('') : '<div class="muted" style="font-size:13px">–</div>';
+}
+function renderLists(){
+  const cnt = new Map();
+  for (const g of S.all.values()) for (const l of (g.user.lists||[])) cnt.set(l, (cnt.get(l)||0) + 1);
+  $('#lists').innerHTML = S.meta.lists.length ? S.meta.lists.map(l =>
+    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}"><span>${esc(l)}</span><span><span class="n">${cnt.get(l)||0}</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
+    : '<div class="muted" style="font-size:13px">Noch keine Listen. Im Detailfenster kannst du Einträge zu Listen hinzufügen.</div>';
+}
+function renderStat(){
+  let a = 0, r = 0, read = 0;
+  for (const g of S.all.values()) { if (g.status === 'active') a++; else r++; if (g.user.read) read++; }
+  $('#stat').innerHTML = `${a} Favoriten · ${r} entfernt · ${read} gelesen<br>Letztes Update: ${S.meta.lastImport ? new Date(S.meta.lastImport).toLocaleString('de-DE') : '–'}`;
+}
+function rebuildDatalist(){
+  const keys = new Set();
+  for (const g of S.all.values()) for (const t of TAG_TYPES) for (const n of (g.tags[t]||[])) keys.add(`${TYPE_KEY[t]}:${n}`);
+  S.tagKeys = keys;
+  $('#tagList').innerHTML = [...keys].sort().map(k => `<option value="${esc(k)}">`).join('');
+}
+
+/* ---------- Modal ---------- */
+function showModal(kind){ S.modal = kind; $('#modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; $('#modal').scrollTop = 0; }
+function closeModal(){ S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
+
+function openDetail(id){
+  const g = S.all.get(id); if (!g) return;
+  S.detailId = id;
+  const u = g.user, resume = u.last_page > 1 && !u.read;
+  const tags = TAG_TYPES.filter(t => (g.tags[t]||[]).length).map(t => `<div class="l">${TYPE_LABEL[t]}</div><div class="v">${g.tags[t].map(n => `<span class="chip" data-tag="${esc(t)}" data-name="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen">${esc(n)}</span>`).join('')}</div>`).join('');
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>
+  <div class="detail">
+    <div>
+      <div class="dcover"><img alt=""></div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" style="flex:1" data-read="${resume ? u.last_page : 1}">${resume ? `▶ Weiterlesen (S. ${u.last_page})` : '▶ Lesen'}</button>
+        ${u.last_page > 1 ? '<button data-read="1" title="Von vorne">↺</button>' : ''}
+      </div>
+      <div class="row" style="margin-top:8px;justify-content:space-between"><button data-nav="-1">‹ Vorheriger</button><button data-nav="1">Nächster ›</button></div>
+    </div>
+    <div>
+      <h2>${esc(g.title_english || dispTitle(g))}</h2>
+      ${g.title_japanese ? `<div class="jp">${esc(g.title_japanese)}</div>` : ''}
+      ${g.status === 'removed' ? `<div class="warnbox">Nicht mehr in deinen nhentai-Favoriten (seit ${fmtTs(g.removed_at)}).<br><button data-reactivate>Wieder als Favorit führen</button><button data-delete class="danger">Aus Archiv löschen</button></div>` : ''}
+      <div class="meta"><a href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer">#${esc(g.id)} auf nhentai ↗</a><span>${g.pages||'?'} Seiten</span><span>Upload: ${fmtDate(g.upload_date)}</span><span>Im Archiv seit ${fmtTs(g.added_at)}</span></div>
+      <div class="tg">${tags || '<div class="muted">Keine Tags</div>'}</div>
+      <div class="personal">
+        <div class="row"><span class="lbl" style="margin:0 6px 0 0">Bewertung</span>
+          <div class="stars">${[1,2,3,4,5].map(i => `<span data-star="${i}" class="${i <= (u.rating||0) ? 'on' : ''}">★</span>`).join('')}</div>
+          <label class="check" style="margin:0 0 0 auto"><input type="checkbox" data-readflag ${u.read ? 'checked' : ''}> Gelesen</label>
+        </div>
+        <div><div class="lbl">Listen</div><div class="listbox">
+          ${S.meta.lists.map(l => `<label class="chip"><input type="checkbox" data-glist="${esc(l)}" ${u.lists.includes(l) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
+          <input data-newlist placeholder="+ neue Liste ⏎" style="width:150px;padding:3px 10px;border-radius:999px;font-size:12.5px">
+        </div></div>
+        <div><div class="lbl">Notizen</div><textarea data-notes placeholder="Eigene Notizen …">${esc(u.notes||'')}</textarea></div>
+      </div>
+    </div>
+  </div>`;
+  loadImg($('#modalBody .dcover img'), 'cover', g);
+  if (S.modal !== 'detail') showModal('detail'); else $('#modal').scrollTop = 0;
+}
+function navDetail(d){
+  const i = S.view.findIndex(x => x.id === S.detailId);
+  const n = S.view[i + d]; if (n) openDetail(n.id);
+}
+
+function onModalClick(e){
+  const t = e.target;
+  if (t.closest('[data-x]')) return closeModal();
+  if (S.modal === 'detail') {
+    const g = S.all.get(S.detailId); if (!g) return;
+    let el;
+    if ((el = t.closest('[data-read]'))) return openReader(g.id, +el.dataset.read);
+    if ((el = t.closest('[data-nav]'))) return navDetail(+el.dataset.nav);
+    if ((el = t.closest('[data-tag]'))) { closeModal(); return addChip(el.dataset.tag, el.dataset.name, e.shiftKey ? 'exc' : 'inc'); }
+    if ((el = t.closest('[data-star]'))) {
+      const v = +el.dataset.star; g.user.rating = g.user.rating === v ? 0 : v;
+      document.querySelectorAll('#modalBody [data-star]').forEach(s => s.classList.toggle('on', +s.dataset.star <= g.user.rating));
+      saveSoon(g); replaceCard(g); return;
+    }
+    if (t.closest('[data-reactivate]')) { g.status = 'active'; delete g.removed_at; DB.put([g]); render(); return openDetail(g.id); }
+    if (t.closest('[data-delete]')) {
+      if (!confirm('Diesen Eintrag endgültig aus dem Archiv löschen? (Bewertung, Notizen und Listen gehen verloren)')) return;
+      DB.del([g.id]); S.all.delete(g.id); closeModal(); render(); toast('Gelöscht'); return;
+    }
+  }
+  if (S.modal === 'review') onReviewClick(e);
+}
+function onModalChange(e){
+  const t = e.target;
+  if (S.modal === 'detail') {
+    const g = S.all.get(S.detailId); if (!g) return;
+    if (t.matches('[data-readflag]')) { g.user.read = t.checked; if (!t.checked) g.user.last_page = 0; saveSoon(g); replaceCard(g); renderStat(); }
+    if (t.matches('[data-glist]')) { const l = t.dataset.glist; g.user.lists = t.checked ? [...new Set([...g.user.lists, l])] : g.user.lists.filter(x => x !== l); hayCache.delete(g); saveSoon(g); renderLists(); }
+  }
+  if (S.modal === 'review') onReviewChange(e);
+}
+function onModalInput(e){
+  if (S.modal === 'detail' && e.target.matches('[data-notes]')) { const g = S.all.get(S.detailId); g.user.notes = e.target.value; hayCache.delete(g); saveSoon(g); }
+}
+function onModalKey(e){
+  if (S.modal === 'detail' && e.target.matches('[data-newlist]') && e.key === 'Enter') {
+    const name = e.target.value.trim(); if (!name) return;
+    const g = S.all.get(S.detailId);
+    if (!S.meta.lists.includes(name)) { S.meta.lists.push(name); saveMeta(); }
+    if (!g.user.lists.includes(name)) g.user.lists.push(name);
+    hayCache.delete(g); DB.put([g]); renderLists(); openDetail(g.id);
+  }
+}
+
+/* ---------- Reader ---------- */
+const R = {g:null, page:1, mode: ls.get('rmode','single'), fitw: ls.get('rfitw', false), io:null, io2:null};
+function openReader(id, page){
+  const g = S.all.get(id);
+  if (!g.media_id && !(g.page_urls||[]).length) { toast('Für diesen Eintrag fehlen Bilddaten – bitte einmal mit dem Skript aktualisieren.'); return; }
+  if (!g.pages) { toast('Seitenzahl unbekannt – bitte mit dem Skript aktualisieren.'); return; }
+  R.g = g; R.page = Math.min(Math.max(1, page||1), g.pages);
+  $('#reader').classList.remove('hidden'); document.body.style.overflow = 'hidden';
+  $('#rTitle').textContent = dispTitle(g); $('#rMode').value = R.mode;
+  $('#rRange').max = g.pages;
+  buildReader();
+}
+function buildReader(){
+  const st = $('#rstage'); R.io?.disconnect(); R.io2?.disconnect();
+  st.innerHTML = ''; st.className = R.mode + (R.fitw ? ' fitw' : ''); st.scrollTop = 0;
+  if (R.mode === 'single') { st.appendChild(document.createElement('img')); showPage(); return; }
+  const frag = document.createDocumentFragment();
+  for (let p = 1; p <= R.g.pages; p++) { const img = document.createElement('img'); img.dataset.p = p; img.alt = ''; frag.appendChild(img); }
+  st.appendChild(frag);
+  R.io = new IntersectionObserver(es => { for (const e of es) { const img = e.target; if (e.isIntersecting && !img.dataset.l) { img.dataset.l = 1; img.addEventListener('load', () => img.classList.add('ok'), {once:true}); loadImg(img, 'page', R.g, +img.dataset.p); } } }, {root:st, rootMargin:'2000px 0px'});
+  R.io2 = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) setPage(+e.target.dataset.p); }, {root:st, rootMargin:'-45% 0px -45% 0px'});
+  st.querySelectorAll('img').forEach(i => { R.io.observe(i); R.io2.observe(i); });
+  const start = R.page;
+  if (start > 1) {
+    // Vorherige Seiten sofort laden, damit der Sprung zur Lesestelle stabil ist
+    st.querySelectorAll('img').forEach(i => { if (+i.dataset.p <= start && !i.dataset.l) { i.dataset.l = 1; i.addEventListener('load', () => i.classList.add('ok'), {once:true}); loadImg(i, 'page', R.g, +i.dataset.p); } });
+    const target = st.querySelector(`img[data-p="${start}"]`);
+    target.scrollIntoView(); setTimeout(() => target.scrollIntoView(), 600);
+  }
+  setPage(start);
+}
+function showPage(){
+  const st = $('#rstage'), img = st.querySelector('img');
+  img.removeAttribute('src'); loadImg(img, 'page', R.g, R.page); st.scrollTop = 0;
+  for (const k of [1,2]) { const p = R.page + k; if (p <= R.g.pages) loadImg(new Image(), 'page', R.g, p); }
+  setPage(R.page);
+}
+function setPage(p){
+  R.page = p;
+  $('#rpos').textContent = `${p} / ${R.g.pages}`; $('#rRange').value = p;
+  const u = R.g.user; u.last_page = p;
+  if (p >= R.g.pages && !u.read) { u.read = true; toast('✓ Als gelesen markiert'); }
+  saveSoon(R.g);
+}
+function go(d){
+  if (R.mode === 'single') {
+    const p = R.page + d;
+    if (p < 1) return; if (p > R.g.pages) { toast('Ende erreicht'); return; }
+    R.page = p; showPage();
+  } else {
+    const t = $('#rstage').querySelector(`img[data-p="${Math.min(Math.max(1, R.page + d), R.g.pages)}"]`); t?.scrollIntoView({behavior:'smooth'});
+  }
+}
+function jump(p){ R.page = p; if (R.mode === 'single') showPage(); else $('#rstage').querySelector(`img[data-p="${p}"]`)?.scrollIntoView(); }
+function closeReader(){
+  R.io?.disconnect(); R.io2?.disconnect();
+  $('#reader').classList.add('hidden'); $('#rstage').innerHTML = '';
+  if (!S.modal) document.body.style.overflow = '';
+  if (R.g) { DB.put([R.g]); replaceCard(R.g); renderStat(); if (S.modal === 'detail' && S.detailId === R.g.id) openDetail(R.g.id); }
+  R.g = null;
+}
+
+/* ---------- Import: Parsen ---------- */
+function fixUrl(u){ u = String(u||'').trim(); if (!u || u.startsWith('data:')) return ''; return u.startsWith('//') ? 'https:' + u : u; }
+function normDate(s){
+  s = String(s||'').trim(); if (!s) return ''; let m;
+  if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
+  if ((m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/))) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+  if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) return `${m[3]}-${pad(m[1])}-${pad(m[2])}`;
+  if (/^\d{9,11}$/.test(s)) return new Date(+s * 1000).toISOString().slice(0,10);
+  const d = new Date(s); return isNaN(d) ? '' : d.toISOString().slice(0,10);
+}
+function normTags(t){ const o = {}; for (const k of TAG_TYPES) o[k] = [...new Set((t?.[k]||[]).map(s => String(s).trim()).filter(Boolean))]; return o; }
+function normExport(g){
+  if (!g || !g.id) return null;
+  const r = {id:String(g.id), media_id:String(g.media_id||''), title_english:g.title_english||'', title_japanese:g.title_japanese||'', title_pretty:g.title_pretty||'',
+    tags:normTags(g.tags), pages:+g.pages||0, upload_date:normDate(g.upload_date), cover_url:fixUrl(g.cover_url),
+    page_exts:Array.isArray(g.page_exts) ? g.page_exts : [], default_ext:g.default_ext||'', src:'v3'};
+  if (Array.isArray(g.page_urls) && g.page_urls.length) r.page_urls = g.page_urls;
+  return r;
+}
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/, '');
+  const firstLine = text.slice(0, text.indexOf('\n') >>> 0);
+  const delim = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
+  const rows = []; let row = [], f = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i+1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i+1] === '\n') i++; row.push(f); f = ''; rows.push(row); row = []; }
+    else f += c;
+  }
+  if (f !== '' || row.length) { row.push(f); rows.push(row); }
+  const head = (rows.shift() || []).map(h => h.trim());
+  return rows.filter(r => r.some(x => x !== '')).map(r => Object.fromEntries(head.map((h,i) => [h, r[i] ?? ''])));
+}
+function normCsv(row){
+  const id = String(row.id||'').trim() || (String(row.url||'').match(/\/g\/(\d+)/)||[])[1];
+  if (!id) return null;
+  const split = s => String(s||'').split(',').map(x => x.trim()).filter(Boolean);
+  const cover = fixUrl(row.cover);
+  const firstImg = String(row.images||'').split('|')[0].trim();
+  const media = (cover.match(/\/galleries\/(\d+)\//)||[])[1] || (firstImg.match(/\/galleries\/(\d+)\//)||[])[1] || '';
+  return {id, media_id:media, title_english:row.title_english||'', title_pretty:row.title_pretty||row.title_english||'', title_japanese:row.title_japanese||'',
+    tags:normTags({parody:split(row.parodies), character:split(row.characters), tag:split(row.tags), artist:split(row.artists), group:split(row.groups), language:split(row.languages), category:split(row.categories)}),
+    pages:parseInt(row.pages,10)||0, upload_date:normDate(row.uploaded_date), cover_url:cover, page_exts:[],
+    default_ext:(firstImg.match(/\.([a-z0-9]+)$/i)||[])[1]||'', src:'csv'};
+}
+
+/* ---------- Import: Vergleich ---------- */
+const sig = g => JSON.stringify([TAG_TYPES.map(t => [...(g.tags[t]||[])].sort()), g.pages||0]);
+const normHost = u => String(u||'').replace(/\/\/t\d*\./, '//t.');
+function compare(old, neu){
+  const merged = {...old}; let silent = false;
+  const setT = (k, v) => {
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) return;
+    const same = k === 'cover_url' ? normHost(merged[k]) === normHost(v) : JSON.stringify(merged[k]) === JSON.stringify(v);
+    if (!same) { merged[k] = v; silent = true; }
+  };
+  ['media_id','cover_url','page_exts','default_ext','page_urls','upload_date','title_pretty'].forEach(k => setT(k, neu[k]));
+  const srcUpgrade = old.src !== neu.src && neu.src === 'v3';
+  if (srcUpgrade) { setT('title_english', neu.title_english); setT('title_japanese', neu.title_japanese); merged.src = 'v3'; silent = true; }
+  if (!old.pages && neu.pages) { merged.pages = neu.pages; silent = true; }
+
+  const diff = [];
+  const tagCount = TAG_TYPES.reduce((s,t) => s + (neu.tags[t]||[]).length, 0);
+  if (tagCount > 0) for (const t of TAG_TYPES) {
+    const a = old.tags[t]||[], b = neu.tags[t]||[];
+    const add = b.filter(x => !a.includes(x)), rem = a.filter(x => !b.includes(x));
+    if (add.length || rem.length) diff.push({type:t, add, rem});
+  }
+  if (neu.pages && old.pages && neu.pages !== old.pages) diff.push({label:'Seiten', from:old.pages, to:neu.pages});
+  if (old.src === neu.src) for (const [k,l] of [['title_english','Titel'],['title_japanese','Jap. Titel']])
+    if (neu[k] && old[k] && neu[k] !== old[k]) diff.push({label:l, from:old[k], to:neu[k]});
+  if (diff.length && old.ignored_sig && old.ignored_sig === sig(neu) && !diff.some(d => d.label && d.label !== 'Seiten')) diff.length = 0;
+  return {diff, merged, silent};
+}
+function buildReview(batch){
+  const rv = {news:[], changes:[], silent:[], removed:[], reactivated:[], missing:[], unchanged:0, favIds:batch.favIds, errors:batch.errors||[], imgs:new Map(), rmMode:'mark'};
+  const seen = new Set();
+  for (const g of batch.galleries) {
+    seen.add(g.id); rv.imgs.set(g.id, g);
+    const old = S.all.get(g.id);
+    if (!old) { rv.news.push(g); continue; }
+    const {diff, merged, silent} = compare(old, g);
+    if (diff.length) rv.changes.push({old, neu:g, diff, merged});
+    else { if (silent) rv.silent.push(merged); rv.unchanged++; }
+  }
+  if (rv.favIds) {
+    const set = new Set(rv.favIds);
+    for (const g of S.all.values()) {
+      if (g.status === 'active' && !set.has(g.id)) rv.removed.push(g);
+      else if (g.status === 'removed' && set.has(g.id)) rv.reactivated.push(g.id);
+    }
+    rv.missing = rv.favIds.filter(id => !S.all.has(id) && !seen.has(id));
+  }
+  rv.newSel = new Set(rv.news.map(g => g.id));
+  rv.chgSel = new Set(rv.changes.map(c => c.neu.id));
+  return rv;
+}
+
+/* ---------- Import: Prüf-Dialog ---------- */
+const MAXROWS = 200;
+function rvRow(g, attr, checked, extra=''){
+  return `<label class="rv"><input type="checkbox" ${attr}="${esc(g.id)}" ${checked ? 'checked' : ''}><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span>
+  <span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)} · ${esc((g.tags.artist||[]).join(', ') || '–')} · ${g.pages||'?'} S.</small>${extra}</span></label>`;
+}
+function diffHtml(diff){
+  return `<div class="diff">${diff.map(d => d.type
+    ? `<span class="dl">${TYPE_LABEL[d.type]}:</span>${d.add.map(n => `<span class="chip add">+ ${esc(n)}</span>`).join('')}${d.rem.map(n => `<span class="chip rem">− ${esc(n)}</span>`).join('')}`
+    : `<span class="dl">${d.label}:</span><span class="chip rem">${esc(d.from)}</span>→<span class="chip add">${esc(d.to)}</span>`).join('')}</div>`;
+}
+function showReview(rv){
+  S.rv = rv;
+  const n = rv.news.length, c = rv.changes.length, r = rv.removed.length;
+  const nothing = !n && !c && !r && !rv.reactivated.length && !rv.silent.length;
+  const more = (len) => len > MAXROWS ? `<div class="more">… und ${len - MAXROWS} weitere (werden entsprechend der Auswahl „Alle/Keine“ übernommen)</div>` : '';
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Import prüfen</h2>
+  <div class="sum"><span class="pill ok">${n} neu</span><span class="pill warn">${c} geändert</span>${rv.favIds ? `<span class="pill bad">${r} nicht mehr favorisiert</span>` : ''}${rv.reactivated.length ? `<span class="pill ok">${rv.reactivated.length} wieder favorisiert</span>` : ''}<span class="pill">${rv.unchanged} unverändert</span></div>
+  ${rv.missing.length ? `<div class="warnbox">⚠ ${rv.missing.length} Favoriten stehen in der Datei nur als ID (ohne Details) und fehlen im Archiv. Im Skript „Bekannte IDs vergessen“ klicken und dann erneut „Neue holen“ – dann kommen sie mit.</div>` : ''}
+  ${rv.errors.length ? `<div class="warnbox">⚠ ${rv.errors.length} Galerien konnte das Skript nicht laden (IDs: ${esc(rv.errors.slice(0,20).join(', '))}${rv.errors.length > 20 ? ' …' : ''}). Einfach später nochmal „Neue holen“.</div>` : ''}
+  ${!rv.favIds && S.all.size ? `<div class="muted" style="font-size:13px;margin-bottom:12px">Diese Datei enthält keine vollständige Favoritenliste, daher wird nicht geprüft, ob etwas entfernt wurde.</div>` : ''}
+  ${n ? `<div class="rvsec"><div class="rvhead"><b>🆕 Neu (${n})</b><button data-sel="new:1">Alle</button><button data-sel="new:0">Keine</button></div><div class="rvlist">${rv.news.slice(0,MAXROWS).map(g => rvRow(g,'data-new',true)).join('')}${more(n)}</div></div>` : ''}
+  ${c ? `<div class="rvsec"><div class="rvhead"><b>✏️ Geändert (${c})</b><button data-sel="chg:1">Alle übernehmen</button><button data-sel="chg:0">Alle ablehnen</button></div>
+     <div class="more" style="border-top:none">Haken = Änderung übernehmen. Abgelehnte Änderungen werden gemerkt und beim nächsten Import nicht erneut gefragt, solange sie gleich bleiben.</div>
+     <div class="rvlist">${rv.changes.slice(0,MAXROWS).map(ch => rvRow(ch.old,'data-chg',true,diffHtml(ch.diff))).join('')}${more(c)}</div></div>` : ''}
+  ${r ? `<div class="rvsec"><div class="rvhead"><b>💔 Nicht mehr in deinen Favoriten (${r})</b>
+     <select data-rmmode><option value="mark">Als „entfernt“ markieren (bleibt im Archiv)</option><option value="delete">Aus dem Archiv löschen</option><option value="keep">Ignorieren</option></select></div>
+     <div class="rvlist">${rv.removed.slice(0,MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}${g.user.notes ? ' · hat Notizen' : ''}</small></span></div>`).join('')}${more(r)}</div></div>` : ''}
+  ${nothing ? '<p>Keine Änderungen gefunden – dein Archiv ist aktuell. 🎉</p>' : ''}
+  <div class="row foot"><button data-x>Abbrechen</button><button class="primary" data-apply>${nothing ? 'OK' : 'Übernehmen'}</button></div>`;
+  document.querySelectorAll('#modalBody img[data-gid]').forEach(img => { const g = rv.imgs.get(img.dataset.gid) || S.all.get(img.dataset.gid); img.loading = 'lazy'; if (g) loadImg(img, 'cover', g); });
+  showModal('review');
+}
+function onReviewClick(e){
+  const rv = S.rv; let el;
+  if ((el = e.target.closest('[data-sel]'))) {
+    const [k, v] = el.dataset.sel.split(':'), on = v === '1';
+    if (k === 'new') { rv.newSel = on ? new Set(rv.news.map(g => g.id)) : new Set(); document.querySelectorAll('#modalBody [data-new]').forEach(i => i.checked = on); }
+    else { rv.chgSel = on ? new Set(rv.changes.map(c => c.neu.id)) : new Set(); document.querySelectorAll('#modalBody [data-chg]').forEach(i => i.checked = on); }
+    return;
+  }
+  if (e.target.closest('[data-apply]')) applyReview();
+}
+function onReviewChange(e){
+  const t = e.target, rv = S.rv;
+  if (t.matches('[data-new]')) t.checked ? rv.newSel.add(t.dataset.new) : rv.newSel.delete(t.dataset.new);
+  if (t.matches('[data-chg]')) t.checked ? rv.chgSel.add(t.dataset.chg) : rv.chgSel.delete(t.dataset.chg);
+  if (t.matches('[data-rmmode]')) rv.rmMode = t.value;
+}
+async function applyReview(){
+  const rv = S.rv, now = Date.now(), put = new Map(), del = [];
+  const cur = id => put.get(id) || S.all.get(id);
+  for (const r of rv.silent) put.set(r.id, r);
+  let acc = 0, rej = 0;
+  for (const ch of rv.changes) {
+    const r = {...ch.merged};
+    if (rv.chgSel.has(ch.neu.id)) {
+      r.tags = ch.neu.tags; if (ch.neu.pages) r.pages = ch.neu.pages;
+      if (ch.neu.title_english) r.title_english = ch.neu.title_english;
+      if (ch.neu.title_japanese) r.title_japanese = ch.neu.title_japanese;
+      delete r.ignored_sig; r.updated_at = now; acc++;
+    } else { r.ignored_sig = sig(ch.neu); rej++; }
+    put.set(r.id, r);
+  }
+  const newRecs = rv.news.filter(g => rv.newSel.has(g.id)).map(g => ({...g, status:'active', added_at:now, updated_at:now, user:defUser()}));
+  if (rv.rmMode === 'mark') for (const g of rv.removed) put.set(g.id, {...cur(g.id), status:'removed', removed_at:now});
+  else if (rv.rmMode === 'delete') rv.removed.forEach(g => del.push(g.id));
+  for (const id of rv.reactivated) { const r = {...cur(id), status:'active'}; delete r.removed_at; put.set(id, r); }
+  if (rv.favIds) {
+    const idx = new Map(rv.favIds.map((id,i) => [id,i]));
+    for (const r of newRecs) r.fav_index = idx.get(r.id) ?? 0;
+    for (const [id,i] of idx) { const r = cur(id); if (r && r.fav_index !== i && !del.includes(id)) put.set(id, {...r, fav_index:i}); }
+  } else {
+    let min = Infinity; for (const g of S.all.values()) min = Math.min(min, g.fav_index ?? 0);
+    if (min === Infinity) min = 0;
+    newRecs.forEach((r,i) => r.fav_index = min - newRecs.length + i);
+  }
+  newRecs.forEach(r => put.set(r.id, r));
+  try {
+    if (put.size) await DB.put([...put.values()]);
+    if (del.length) await DB.del(del);
+  } catch (err) { alert('Speichern fehlgeschlagen: ' + err); return; }
+  for (const [id,r] of put) S.all.set(id, r);
+  for (const id of del) S.all.delete(id);
+  S.meta.lastImport = now; saveMeta();
+  closeModal(); rebuildDatalist(); render();
+  const parts = [];
+  if (newRecs.length) parts.push(`${newRecs.length} neu`);
+  if (acc) parts.push(`${acc} aktualisiert`);
+  if (rej) parts.push(`${rej} abgelehnt`);
+  if (rv.removed.length && rv.rmMode !== 'keep') parts.push(`${rv.removed.length} ${rv.rmMode === 'delete' ? 'gelöscht' : 'als entfernt markiert'}`);
+  toast(parts.length ? '✓ ' + parts.join(' · ') : '✓ Archiv ist aktuell');
+}
+
+async function handleFiles(files){
+  const gal = new Map(); let favIds = null; const errors = []; let any = false;
+  for (const f of files) {
+    let text; try { text = await f.text(); } catch { continue; }
+    const isJson = f.name.toLowerCase().endsWith('.json') || text.trimStart().startsWith('{');
+    if (isJson) {
+      let d; try { d = JSON.parse(text); } catch { toast(`${f.name}: kein gültiges JSON`); continue; }
+      if (d.format === 'nh-fav-archiv-backup') { await restoreBackup(d); return; }
+      if (d.format !== 'nh-fav-export' || !Array.isArray(d.galleries)) { toast(`${f.name}: unbekanntes Format`); continue; }
+      d.galleries.forEach(g => { const n = normExport(g); if (n) gal.set(n.id, n); });
+      if (Array.isArray(d.favorite_ids)) favIds = d.favorite_ids.map(String);
+      if (Array.isArray(d.errors)) errors.push(...d.errors.map(String));
+      any = true;
+    } else {
+      const rows = parseCSV(text);
+      if (!rows.length || !('id' in rows[0] || 'url' in rows[0])) { toast(`${f.name}: CSV nicht erkannt`); continue; }
+      rows.forEach(r => { const n = normCsv(r); if (n) gal.set(n.id, n); });
+      any = true;
+    }
+  }
+  if (any) showReview(buildReview({galleries:[...gal.values()], favIds, errors}));
+}
+
+/* ---------- Backup / Export ---------- */
+function exportBackup(){
+  download(`favoriten-archiv-backup_${today()}.json`, JSON.stringify({format:'nh-fav-archiv-backup', version:1, exported_at:new Date().toISOString(), meta:S.meta, galleries:[...S.all.values()]}), 'application/json');
+}
+async function restoreBackup(d){
+  if (!Array.isArray(d.galleries)) return toast('Backup ungültig');
+  if (!confirm(`Backup vom ${new Date(d.exported_at).toLocaleString('de-DE')} mit ${d.galleries.length} Einträgen einspielen?\n\nDas ERSETZT dein aktuelles Archiv (${S.all.size} Einträge).`)) return;
+  const list = d.galleries.filter(g => g && g.id).map(g => ({...g, id:String(g.id), tags:normTags(g.tags), user:{...defUser(), ...(g.user||{})}, status:g.status||'active'}));
+  await DB.clear(); await DB.put(list);
+  S.meta = {lists:[], ...(d.meta||{})}; await DB.setMeta(S.meta);
+  S.all = new Map(list.map(g => [g.id, g]));
+  rebuildDatalist(); render(); toast(`✓ Backup eingespielt (${list.length} Einträge)`);
+}
+function exportCSV(){
+  const cols = ['id','url','cover','title_english','title_japanese','title_pretty','parodies','characters','tags','artists','groups','languages','categories','pages','uploaded_date','status','rating','read','lists','notes'];
+  const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const rows = [...S.all.values()].sort((a,b) => (a.fav_index??0) - (b.fav_index??0)).map(g => [
+    g.id, `https://nhentai.net/g/${g.id}/`, g.cover_url, g.title_english, g.title_japanese, g.title_pretty,
+    ...['parody','character','tag','artist','group','language','category'].map(t => (g.tags[t]||[]).join(', ')),
+    g.pages, g.upload_date, g.status, g.user.rating||'', g.user.read ? 'ja' : '', (g.user.lists||[]).join(', '), g.user.notes
+  ].map(q).join(','));
+  download(`favoriten-archiv_${today()}.csv`, '\uFEFF' + [cols.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8');
+}
+
+/* ---------- Anleitung ---------- */
+function showHelp(){
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Anleitung</h2><div class="help">
+  <h3>So funktioniert's</h3>
+  <p>nhentai erlaubt keinen direkten Zugriff von fremden Seiten. Darum holt das <b>Userscript</b> die Daten auf nhentai.net und speichert sie als JSON-Datei – die liest du hier ein. Alles wird nur <b>lokal in deinem Browser</b> gespeichert (IndexedDB), nichts landet auf GitHub. Bilder werden direkt von nhentai geladen.</p>
+  <h3>Update-Routine</h3>
+  <ol>
+    <li>Auf <a href="https://nhentai.net/favorites/" target="_blank" rel="noopener noreferrer">nhentai.net → Favoriten</a> im Skript-Panel klicken:
+      <ul><li><b>🆕 Neue holen</b> – schnell: geht alle Favoriten-Seiten durch, lädt aber nur Details für neue Einträge. Erkennt auch entfernte Favoriten.</li>
+      <li><b>🔄 Alles prüfen</b> – langsam: lädt alle Galerien neu, um geänderte Tags zu finden. Ab und zu sinnvoll.</li></ul></li>
+    <li>Die heruntergeladene Datei hier mit <b>Import / Update</b> oder per Drag &amp; Drop einlesen.</li>
+    <li>Im Prüf-Dialog entscheiden: neue übernehmen, Tag-Änderungen annehmen/ablehnen, entfernte markieren oder löschen.</li>
+  </ol>
+  <h3>Bedienung</h3>
+  <ul>
+    <li><b>Suche</b>: mehrere Wörter = alle müssen passen, <code>-wort</code> schließt aus, <code>"zwei wörter"</code> als Phrase. Vorschläge wie <code>künstler:name</code> werden zum Filter-Chip.</li>
+    <li><b>Filter-Chips</b>: Klick wechselt zwischen einschließen (grün) und ausschließen (rot). Shift+Klick auf einen Tag schließt direkt aus.</li>
+    <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
+    <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
+    <li><b>Backup</b> (Menü ⋯): Exportiert alles inkl. Bewertungen, Notizen, Listen – damit kannst du auch auf ein anderes Gerät umziehen.</li>
+  </ul>
+  <p class="muted">Tipp: Browser-Daten löschen entfernt auch das Archiv – mach ab und zu ein Backup.</p></div>`;
+  showModal('help');
+}
+
+/* ---------- Events ---------- */
+function bind(){
+  $('#btnImport').onclick = $('#emptyImport').onclick = () => $('#fileImport').click();
+  $('#emptyHelp').onclick = showHelp;
+  $('#fileImport').onchange = e => { handleFiles([...e.target.files]); e.target.value = ''; };
+  $('#fileRestore').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    try { const d = JSON.parse(await f.text()); if (d.format !== 'nh-fav-archiv-backup') return toast('Das ist keine Backup-Datei'); restoreBackup(d); } catch { toast('Datei konnte nicht gelesen werden'); } };
+
+  $('#btnMenu').onclick = e => { e.stopPropagation(); $('#menuPop').classList.toggle('hidden'); };
+  document.addEventListener('click', e => { if (!e.target.closest('.menu')) $('#menuPop').classList.add('hidden'); });
+  $('#menuPop').onclick = async e => {
+    const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return;
+    $('#menuPop').classList.add('hidden');
+    if (a === 'backup') exportBackup();
+    if (a === 'restore') $('#fileRestore').click();
+    if (a === 'csv') exportCSV();
+    if (a === 'help') showHelp();
+    if (a === 'discreet') { const on = document.body.classList.toggle('discreet'); ls.set('discreet', on); toast(on ? 'Diskret-Modus an (Hover zeigt Cover)' : 'Diskret-Modus aus'); }
+    if (a === 'wipe') {
+      if (!confirm('Wirklich das GESAMTE Archiv löschen – inkl. Bewertungen, Notizen und Listen?')) return;
+      if (!confirm('Letzte Warnung. Vorher ein Backup gemacht?')) return;
+      await DB.clear(); S.all.clear(); S.meta = {lists:[]}; saveMeta(); rebuildDatalist(); render(); toast('Archiv gelöscht');
+    }
+  };
+
+  let qT;
+  const q = $('#q');
+  q.addEventListener('input', e => {
+    const v = q.value;
+    if ((e.inputType === 'insertReplacementText' || !e.inputType) && S.tagKeys.has(v)) {
+      const i = v.indexOf(':'); q.value = ''; S.f.q = ''; return addChip(KEY_TYPE[v.slice(0,i)], v.slice(i+1));
+    }
+    clearTimeout(qT); qT = setTimeout(() => { S.f.q = v; render(); }, 160);
+  });
+  q.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && S.tagKeys.has(q.value)) { const v = q.value, i = v.indexOf(':'); q.value = ''; S.f.q = ''; addChip(KEY_TYPE[v.slice(0,i)], v.slice(i+1)); }
+    if (e.key === 'Escape') { q.value = ''; S.f.q = ''; render(); q.blur(); }
+  });
+
+  $('#chips').onclick = e => {
+    let el;
+    if (e.target.id === 'resetF') { S.f.chips = []; S.f.q = ''; $('#q').value = ''; S.f.list = null; S.f.unread = false; S.f.minRating = 0; $('#fUnread').checked = false; $('#fRating').value = '0'; return render(); }
+    if (e.target.closest('[data-listx]')) { S.f.list = null; return render(); }
+    if ((el = e.target.closest('[data-chipx]'))) { S.f.chips.splice(+el.dataset.chipx, 1); return render(); }
+    if ((el = e.target.closest('[data-chip]'))) { const c = S.f.chips[+el.dataset.chip]; c.mode = c.mode === 'inc' ? 'exc' : 'inc'; render(); }
+  };
+  $('#grid').onclick = e => { const c = e.target.closest('.card'); if (c) openDetail(c.dataset.id); };
+  $('#sort').onchange = e => { S.sort = e.target.value; if (S.sort === 'random') S.rnd.clear(); ls.set('sort', S.sort); render(); };
+  $('#segStatus').onclick = e => { const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x === b)); render(); };
+  $('#fUnread').onchange = e => { S.f.unread = e.target.checked; render(); };
+  $('#fRating').onchange = e => { S.f.minRating = +e.target.value; render(); };
+  $('#facetType').innerHTML = TAG_TYPES.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
+  $('#facetType').value = S.facetType;
+  $('#facetType').onchange = e => { S.facetType = e.target.value; ls.set('facetType', S.facetType); renderFacets(); };
+  $('#facets').onclick = e => {
+    const el = e.target.closest('[data-ft]'); if (!el) return;
+    const i = S.f.chips.findIndex(c => c.type === el.dataset.ft && c.name === el.dataset.fn);
+    if (i >= 0 && !e.shiftKey) { S.f.chips.splice(i,1); render(); } else addChip(el.dataset.ft, el.dataset.fn, e.shiftKey ? 'exc' : 'inc');
+  };
+  $('#lists').onclick = e => {
+    let el;
+    if ((el = e.target.closest('[data-dellist]'))) {
+      e.stopPropagation(); const l = el.dataset.dellist;
+      if (!confirm(`Liste „${l}“ löschen? (Die Einträge selbst bleiben erhalten)`)) return;
+      S.meta.lists = S.meta.lists.filter(x => x !== l); saveMeta();
+      const ch = []; for (const g of S.all.values()) if (g.user.lists.includes(l)) { g.user.lists = g.user.lists.filter(x => x !== l); hayCache.delete(g); ch.push(g); }
+      DB.put(ch); if (S.f.list === l) S.f.list = null; return render();
+    }
+    if ((el = e.target.closest('[data-list]'))) { S.f.list = S.f.list === el.dataset.list ? null : el.dataset.list; render(); }
+  };
+  $('#newList').onkeydown = e => { if (e.key !== 'Enter') return; const n = e.target.value.trim(); if (!n) return; if (!S.meta.lists.includes(n)) { S.meta.lists.push(n); saveMeta(); } e.target.value = ''; renderLists(); };
+  $('#btnSide').onclick = () => $('#side').classList.toggle('open');
+  $('main').addEventListener('click', () => $('#side').classList.remove('open'));
+
+  const mb = $('#modalBody');
+  mb.addEventListener('click', onModalClick); mb.addEventListener('change', onModalChange);
+  mb.addEventListener('input', onModalInput); mb.addEventListener('keydown', onModalKey);
+  $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && S.modal !== 'review') closeModal(); });
+
+  $('#rClose').onclick = closeReader;
+  $('#rMode').onchange = e => { R.mode = e.target.value; ls.set('rmode', R.mode); buildReader(); };
+  $('#rFit').onclick = () => { R.fitw = !R.fitw; ls.set('rfitw', R.fitw); $('#rstage').classList.toggle('fitw', R.fitw); };
+  $('#rRange').onchange = e => jump(+e.target.value);
+  $('#rstage').addEventListener('click', e => {
+    if (R.mode !== 'single') return;
+    const r = e.currentTarget.getBoundingClientRect();
+    go(e.clientX - r.left < r.width * 0.3 ? -1 : 1);
+  });
+
+  document.addEventListener('keydown', e => {
+    const typing = e.target.matches('input,textarea,select');
+    if (!$('#reader').classList.contains('hidden')) {
+      if (e.key === 'Escape') return closeReader();
+      if (typing) return;
+      if (['ArrowRight','d','D'].includes(e.key) || (e.key === ' ' && R.mode === 'single')) { e.preventDefault(); go(1); }
+      else if (['ArrowLeft','a','A'].includes(e.key)) { e.preventDefault(); go(-1); }
+      else if (e.key === 'f' || e.key === 'F') $('#rFit').click();
+      return;
+    }
+    if (S.modal) {
+      if (e.key === 'Escape' && !typing) closeModal();
+      if (S.modal === 'detail' && !typing) { if (e.key === 'ArrowRight') navDetail(1); if (e.key === 'ArrowLeft') navDetail(-1); }
+      return;
+    }
+    if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
+  });
+
+  let ticking = false;
+  const onScroll = () => { if (ticking) return; ticking = true; requestAnimationFrame(() => { ticking = false; checkMore(); }); };
+  addEventListener('scroll', onScroll, {passive:true}); addEventListener('resize', onScroll);
+
+  let depth = 0;
+  addEventListener('dragenter', e => { if (e.dataTransfer?.types?.includes('Files')) { depth++; $('#drop').classList.remove('hidden'); } });
+  addEventListener('dragleave', () => { depth = Math.max(0, depth-1); if (!depth) $('#drop').classList.add('hidden'); });
+  addEventListener('dragover', e => e.preventDefault());
+  addEventListener('drop', e => { e.preventDefault(); depth = 0; $('#drop').classList.add('hidden'); const f = [...(e.dataTransfer?.files||[])]; if (f.length) handleFiles(f); });
+}
+
+/* ---------- Start ---------- */
+(async () => {
+  S.sort = ls.get('sort','fav'); S.facetType = ls.get('facetType','tag');
+  if (ls.get('discreet', false)) document.body.classList.add('discreet');
+  $('#sort').value = S.sort;
+  bind();
+  try { await DB.open(); }
+  catch (e) { $('#empty').classList.remove('hidden'); $('#empty').innerHTML = '<h2>Speicher nicht verfügbar</h2><p>Dein Browser blockiert IndexedDB (z. B. im privaten Modus). Bitte in einem normalen Fenster öffnen.</p>'; return; }
+  try { navigator.storage?.persist?.(); } catch {}
+  const m = await DB.getMeta(); if (m) S.meta = {lists:[], ...m};
+  for (const g of await DB.all()) { g.user = {...defUser(), ...(g.user||{})}; g.tags = normTags(g.tags); S.all.set(g.id, g); }
+  rebuildDatalist(); render();
+})();
+</script>
+</body>
+</html>
