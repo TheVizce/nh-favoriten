@@ -176,10 +176,13 @@ textarea{width:100%;min-height:70px;resize:vertical}
   <button id="btnSide" class="icon only-mobile" title="Filter">☰</button>
   <div class="brand">Favoriten<span>Archiv</span></div>
   <div class="searchwrap"><input id="q" list="tagList" placeholder="Suchen: Titel, Tag, Künstler, ID, Notiz …   ( / )" autocomplete="off" spellcheck="false"><datalist id="tagList"></datalist></div>
-  <button id="btnImport" class="primary">⬆<span class="hide-mobile"> Import / Update</span></button>
+  <button id="btnSync" class="primary">🔄<span class="hide-mobile"> Sync</span></button>
   <div class="menu">
     <button id="btnMenu" class="icon" title="Menü">⋯</button>
     <div id="menuPop" class="pop hidden">
+      <button data-act="key">🔑 API-Key</button>
+      <button data-act="details">⬇️ Fehlende Details nachladen</button>
+      <button data-act="import">📂 Datei importieren (JSON/CSV)</button>
       <button data-act="backup">💾 Backup exportieren (JSON)</button>
       <button data-act="restore">♻️ Backup einspielen</button>
       <button data-act="csv">📄 Archiv als CSV exportieren</button>
@@ -210,9 +213,9 @@ textarea{width:100%;min-height:70px;resize:vertical}
     <section>
       <h3>Status</h3>
       <div class="seg" id="segStatus">
-        <button data-status="active" class="on">Favoriten</button>
-        <button data-status="removed">Entfernt</button>
         <button data-status="all">Alle</button>
+        <button data-status="active">Favoriten</button>
+        <button data-status="removed">Entfernt</button>
       </div>
       <label class="check"><input type="checkbox" id="fUnread"> Nur ungelesene</label>
       <div class="row" style="margin-top:8px"><span class="muted" style="font-size:13px">Bewertung ab</span>
@@ -229,6 +232,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <div id="facets"></div>
     </section>
     <div class="stat" id="stat"></div>
+    <div class="stat" id="detailProg" style="border:none;padding-top:4px"></div>
   </aside>
 
   <main>
@@ -238,12 +242,12 @@ textarea{width:100%;min-height:70px;resize:vertical}
     <div id="empty" class="hidden">
       <h2>Noch keine Favoriten im Archiv</h2>
       <ol>
-        <li>Userscript <b>„nhentai Favoriten-Archiv Sync“</b> in Tampermonkey installieren.</li>
-        <li>Auf nhentai.net deine Favoriten öffnen und <b>„🆕 Neue holen“</b> klicken – es lädt eine JSON-Datei herunter.</li>
-        <li>Die Datei hier per <b>Import</b> oder Drag &amp; Drop einlesen.</li>
+        <li>In deinen <a href="https://nhentai.net/user/settings#apikeys" target="_blank" rel="noopener noreferrer">nhentai-Einstellungen</a> einen API-Key erstellen.</li>
+        <li>Hier oben auf <b>🔄 Sync</b> klicken, Key einfügen und <b>„Komplett abgleichen“</b> wählen.</li>
+        <li>Im Prüf-Dialog bestätigen – fertig.</li>
       </ol>
-      <p class="muted">Eine CSV aus deinem bisherigen Skript (v2.1) funktioniert auch – fehlende Details ergänzt das nächste Update automatisch.</p>
-      <div class="row"><button class="primary" id="emptyImport">Datei importieren</button><button id="emptyHelp">Anleitung</button></div>
+      <p class="muted">Alternativ kannst du eine CSV/JSON aus deinen bisherigen Skripten importieren (Menü ⋯ oder Drag &amp; Drop).</p>
+      <div class="row"><button class="primary" id="emptySync">🔄 Sync einrichten</button><button id="emptyImport">Datei importieren</button><button id="emptyHelp">Anleitung</button></div>
     </div>
   </main>
 </div>
@@ -283,7 +287,7 @@ const ls = {get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.
 
 const S = {
   all: new Map(), meta: {lists:[]},
-  f: {q:'', chips:[], status:'active', unread:false, minRating:0, list:null},
+  f: {q:'', chips:[], status:'all', unread:false, minRating:0, list:null},
   sort: 'fav', view: [], shown: 0, facetType: 'tag',
   modal: null, detailId: null, rv: null, rnd: new Map(), tagKeys: new Set()
 };
@@ -315,14 +319,71 @@ const saveTimers = new Map();
 function saveSoon(g){ clearTimeout(saveTimers.get(g.id)); saveTimers.set(g.id, setTimeout(() => { saveTimers.delete(g.id); DB.put([g]); }, 400)); }
 function saveMeta(){ DB.setMeta(S.meta); }
 
+/* ---------- nhentai API v2 ---------- */
+const API_BASE = 'https://nhentai.net/api/v2';
+const GAP = {fav:4200, tags:4200, gal:1450, misc:1500};   // Rate-Limits: 15/min (Favoriten, Tags), 45/min (Galerien)
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const Api = {
+  bridge: false, waiters: new Map(), seq: 0, last: {}, onWait: null,
+  key(){ return ls.get('nhfav-apikey', ''); },
+  setKey(k){ if (k) ls.set('nhfav-apikey', k); else { try { localStorage.removeItem('nhfav-apikey'); } catch {} } },
+  init(){
+    addEventListener('message', e => {
+      const d = e.data; if (!d || typeof d !== 'object' || e.origin !== location.origin) return;
+      if (d.nhb === 'hello') this.bridge = true;
+      if (d.nhb === 'res') { const w = this.waiters.get(d.id); if (w) { this.waiters.delete(d.id); w(d); } }
+    });
+    window.postMessage({nhb:'ping'}, '*');
+  },
+  raw(path){
+    const url = API_BASE + path, headers = {}, k = this.key();
+    if (k) headers.Authorization = 'Key ' + k;
+    if (this.bridge) return new Promise((res, rej) => {
+      const id = ++this.seq;
+      const t = setTimeout(() => { this.waiters.delete(id); rej(new Error('Bridge-Userscript antwortet nicht')); }, 60000);
+      this.waiters.set(id, d => { clearTimeout(t); res({status:d.status, text:d.body, retryAfter:d.retryAfter}); });
+      window.postMessage({nhb:'req', id, url, headers}, '*');
+    });
+    return fetch(url, {headers}).then(async r => ({status:r.status, text:await r.text(), retryAfter:r.headers.get('Retry-After')}),
+      () => { throw new Error('CORS'); });
+  },
+  async get(path, bucket, gap){
+    for (let a = 0; ; a++) {
+      const wait = (this.last[bucket]||0) + gap - Date.now(); if (wait > 0) await sleep(wait);
+      this.last[bucket] = Date.now();
+      const r = await this.raw(path);
+      if (r.status === 429 || r.status === 503) {
+        if (a >= 5) throw new Error('Rate-Limit (' + r.status + ')');
+        const ms = Math.max((parseInt(r.retryAfter, 10)||0) * 1000, 20000 * (a + 1));
+        this.onWait?.(ms); await sleep(ms); continue;
+      }
+      if (r.status === 401 || r.status === 403) throw new Error(`Nicht autorisiert (${r.status}) – API-Key prüfen`);
+      if (!r.status) throw new Error('Netzwerkfehler');
+      if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
+      try { return JSON.parse(r.text); } catch { throw new Error('Ungültige Antwort'); }
+    }
+  }
+};
+const CDN_FALLBACK = {page:[1,2,3,4].map(n => `https://i${n}.nhentai.net`), thumb:[1,2,3,4].map(n => `https://t${n}.nhentai.net`)};
+function cdnUrls(path, kind){
+  if (!path) return [];
+  if (/^https?:/.test(path)) return [path];
+  const list = (kind === 'page' ? S.meta.cdn?.image_servers : S.meta.cdn?.thumb_servers) || [];
+  const servers = list.length ? list : CDN_FALLBACK[kind === 'page' ? 'page' : 'thumb'];
+  return servers.map(s => (/^https?:/.test(s) ? s : 'https://' + s).replace(/\/$/, '') + '/' + path.replace(/^\//, ''));
+}
+
 /* ---------- Bilder (mit Fallback über Server & Dateiendungen) ---------- */
 const hostMemo = {page:null, thumb:null};
 // nhentai-CDN: Server nur noch nummeriert (t1–t4 / i1–i4); Cover heißen cover.<ext>.webp, Seiten <n>.<ext>
 const LEGACY_HOST = /^https:\/\/(t|i)\.nhentai\.net\//;
 function candidates(kind, g, page){
   const out = [];
+  if (kind === 'page') out.push(...cdnUrls(g.page_paths?.[page-1], 'page'));
+  if (kind === 'big') out.push(...cdnUrls(g.cover_path, 'thumb'));
+  if (kind !== 'page') out.push(...cdnUrls(g.thumb_path, 'thumb'));
   if (kind === 'page' && g.page_urls && g.page_urls[page-1]) out.push(g.page_urls[page-1].replace(LEGACY_HOST, 'https://$11.nhentai.net/'));
-  if (kind === 'cover' && g.cover_url && !LEGACY_HOST.test(g.cover_url)) out.push(g.cover_url);
+  if (kind !== 'page' && g.cover_url && !LEGACY_HOST.test(g.cover_url)) out.push(g.cover_url);
   if (!g.media_id) return out;
   const key = kind === 'page' ? 'page' : 'thumb';
   const hosts = [1,2,3,4].map(n => (kind === 'page' ? 'i' : 't') + n);
@@ -481,7 +542,7 @@ function rebuildDatalist(){
 
 /* ---------- Modal ---------- */
 function showModal(kind){ S.modal = kind; $('#modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; $('#modal').scrollTop = 0; }
-function closeModal(){ S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal(){ if (S.sync) S.sync.abort = true; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
 
 function openDetail(id){
   const g = S.all.get(id); if (!g) return;
@@ -501,7 +562,7 @@ function openDetail(id){
     <div>
       <h2>${esc(g.title_english || dispTitle(g))}</h2>
       ${g.title_japanese ? `<div class="jp">${esc(g.title_japanese)}</div>` : ''}
-      ${g.status === 'removed' ? `<div class="warnbox">Nicht mehr in deinen nhentai-Favoriten (seit ${fmtTs(g.removed_at)}).<br><button data-reactivate>Wieder als Favorit führen</button><button data-delete class="danger">Aus Archiv löschen</button></div>` : ''}
+      ${g.status === 'removed' ? `<div class="warnbox">Nicht mehr in deinen nhentai-Favoriten (seit ${fmtTs(g.removed_at)}) – bleibt aber in deinem Archiv.<br><button data-reactivate>Kennzeichnung aufheben</button><button data-delete class="danger">Aus Archiv löschen</button></div>` : ''}
       <div class="meta"><a href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer">#${esc(g.id)} auf nhentai ↗</a><span>${g.pages||'?'} Seiten</span><span>Upload: ${fmtDate(g.upload_date)}</span><span>Im Archiv seit ${fmtTs(g.added_at)}</span></div>
       <div class="tg">${tags || '<div class="muted">Keine Tags</div>'}</div>
       <div class="personal">
@@ -517,7 +578,7 @@ function openDetail(id){
       </div>
     </div>
   </div>`;
-  loadImg($('#modalBody .dcover img'), 'cover', g);
+  loadImg($('#modalBody .dcover img'), 'big', g);
   if (S.modal !== 'detail') showModal('detail'); else $('#modal').scrollTop = 0;
 }
 function navDetail(d){
@@ -546,6 +607,7 @@ function onModalClick(e){
     }
   }
   if (S.modal === 'review') onReviewClick(e);
+  if (S.modal === 'key' || S.modal === 'sync') onSyncClick(e);
 }
 function onModalChange(e){
   const t = e.target;
@@ -560,6 +622,7 @@ function onModalInput(e){
   if (S.modal === 'detail' && e.target.matches('[data-notes]')) { const g = S.all.get(S.detailId); g.user.notes = e.target.value; hayCache.delete(g); saveSoon(g); }
 }
 function onModalKey(e){
+  if (S.modal === 'key' && e.key === 'Enter' && e.target.matches('[data-keyinput]')) return saveKey();
   if (S.modal === 'detail' && e.target.matches('[data-newlist]') && e.key === 'Enter') {
     const name = e.target.value.trim(); if (!name) return;
     const g = S.all.get(S.detailId);
@@ -571,9 +634,13 @@ function onModalKey(e){
 
 /* ---------- Reader ---------- */
 const R = {g:null, page:1, mode: ls.get('rmode','single'), fitw: ls.get('rfitw', false), io:null, io2:null};
-function openReader(id, page){
+async function openReader(id, page){
   const g = S.all.get(id);
-  if (!g.media_id && !(g.page_urls||[]).length) { toast('Für diesen Eintrag fehlen Bilddaten – bitte einmal mit dem Skript aktualisieren.'); return; }
+  if (!(g.page_paths||[]).length && Api.key()) {
+    toast('Lade Seiteninfos …', 1500);
+    try { await fetchDetail(g); } catch (e) { toast('Seiteninfos nicht geladen (' + e.message + ') – versuche es trotzdem'); }
+  }
+  if (!g.media_id && !(g.page_urls||[]).length && !(g.page_paths||[]).length) { toast('Für diesen Eintrag fehlen Bilddaten – bitte einmal mit dem Skript aktualisieren.'); return; }
   if (!g.pages) { toast('Seitenzahl unbekannt – bitte mit dem Skript aktualisieren.'); return; }
   R.g = g; R.page = Math.min(Math.max(1, page||1), g.pages);
   $('#reader').classList.remove('hidden'); document.body.style.overflow = 'hidden';
@@ -690,9 +757,9 @@ function compare(old, neu){
     const same = k === 'cover_url' ? normHost(merged[k]) === normHost(v) : JSON.stringify(merged[k]) === JSON.stringify(v);
     if (!same) { merged[k] = v; silent = true; }
   };
-  ['media_id','cover_url','page_exts','default_ext','page_urls','upload_date','title_pretty'].forEach(k => setT(k, neu[k]));
-  const srcUpgrade = old.src !== neu.src && neu.src === 'v3';
-  if (srcUpgrade) { setT('title_english', neu.title_english); setT('title_japanese', neu.title_japanese); merged.src = 'v3'; silent = true; }
+  ['media_id','cover_url','thumb_path','page_exts','default_ext','page_urls','upload_date','title_pretty'].forEach(k => setT(k, neu[k]));
+  const srcUpgrade = old.src !== neu.src && neu.src !== 'csv';
+  if (srcUpgrade) { setT('title_english', neu.title_english); setT('title_japanese', neu.title_japanese); merged.src = neu.src; silent = true; }
   if (!old.pages && neu.pages) { merged.pages = neu.pages; silent = true; }
 
   const diff = [];
@@ -757,8 +824,9 @@ function showReview(rv){
   ${c ? `<div class="rvsec"><div class="rvhead"><b>✏️ Geändert (${c})</b><button data-sel="chg:1">Alle übernehmen</button><button data-sel="chg:0">Alle ablehnen</button></div>
      <div class="more" style="border-top:none">Haken = Änderung übernehmen. Abgelehnte Änderungen werden gemerkt und beim nächsten Import nicht erneut gefragt, solange sie gleich bleiben.</div>
      <div class="rvlist">${rv.changes.slice(0,MAXROWS).map(ch => rvRow(ch.old,'data-chg',true,diffHtml(ch.diff))).join('')}${more(c)}</div></div>` : ''}
-  ${r ? `<div class="rvsec"><div class="rvhead"><b>💔 Nicht mehr in deinen Favoriten (${r})</b>
-     <select data-rmmode><option value="mark">Als „entfernt“ markieren (bleibt im Archiv)</option><option value="delete">Aus dem Archiv löschen</option><option value="keep">Ignorieren</option></select></div>
+  ${r ? `<div class="rvsec"><div class="rvhead"><b>💔 Nicht mehr auf nhentai favorisiert (${r})</b>
+     <select data-rmmode><option value="mark">Behalten, als „entfernt“ kennzeichnen</option><option value="keep">Behalten, nicht kennzeichnen</option></select></div>
+     <div class="more" style="border-top:none">Diese Einträge bleiben in deinem Archiv – inklusive Bewertung, Notizen und Listen. Löschen kannst du sie nur selbst im Detailfenster.</div>
      <div class="rvlist">${rv.removed.slice(0,MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}${g.user.notes ? ' · hat Notizen' : ''}</small></span></div>`).join('')}${more(r)}</div></div>` : ''}
   ${nothing ? '<p>Keine Änderungen gefunden – dein Archiv ist aktuell. 🎉</p>' : ''}
   <div class="row foot"><button data-x>Abbrechen</button><button class="primary" data-apply>${nothing ? 'OK' : 'Übernehmen'}</button></div>`;
@@ -798,7 +866,6 @@ async function applyReview(){
   }
   const newRecs = rv.news.filter(g => rv.newSel.has(g.id)).map(g => ({...g, status:'active', added_at:now, updated_at:now, user:defUser()}));
   if (rv.rmMode === 'mark') for (const g of rv.removed) put.set(g.id, {...cur(g.id), status:'removed', removed_at:now});
-  else if (rv.rmMode === 'delete') rv.removed.forEach(g => del.push(g.id));
   for (const id of rv.reactivated) { const r = {...cur(id), status:'active'}; delete r.removed_at; put.set(id, r); }
   if (rv.favIds) {
     const idx = new Map(rv.favIds.map((id,i) => [id,i]));
@@ -822,8 +889,9 @@ async function applyReview(){
   if (newRecs.length) parts.push(`${newRecs.length} neu`);
   if (acc) parts.push(`${acc} aktualisiert`);
   if (rej) parts.push(`${rej} abgelehnt`);
-  if (rv.removed.length && rv.rmMode !== 'keep') parts.push(`${rv.removed.length} ${rv.rmMode === 'delete' ? 'gelöscht' : 'als entfernt markiert'}`);
+  if (rv.removed.length && rv.rmMode === 'mark') parts.push(`${rv.removed.length} als entfernt gekennzeichnet`);
   toast(parts.length ? '✓ ' + parts.join(' · ') : '✓ Archiv ist aktuell');
+  if (Api.key()) queueDetails(newRecs.map(r => r.id));
 }
 
 async function handleFiles(files){
@@ -847,6 +915,131 @@ async function handleFiles(files){
     }
   }
   if (any) showReview(buildReview({galleries:[...gal.values()], favIds, errors}));
+}
+
+/* ---------- Sync über die API ---------- */
+function fromListItem(x){
+  const dict = S.meta.tagDict || {}, tags = {}; TAG_TYPES.forEach(t => tags[t] = []);
+  let complete = true;
+  for (const id of (x.tag_ids||[])) { const d = dict[id]; if (!d) { complete = false; break; } if (tags[d[0]]) tags[d[0]].push(d[1]); }
+  return {id:String(x.id), media_id:String(x.media_id||''), title_english:x.english_title||'', title_japanese:x.japanese_title||'', title_pretty:'',
+    tags:normTags(complete ? tags : {}), pages:x.num_pages||0, upload_date:'', cover_url:'', thumb_path:x.thumbnail||'', page_exts:[], default_ext:'', src:'api2'};
+}
+function connHint(){ return Api.bridge ? 'Verbindung über Bridge-Userscript ✓' : 'Direkte Verbindung (ohne Bridge-Userscript)'; }
+function corsHelp(){ return `Dein Browser blockiert den direkten Zugriff auf nhentai. Installiere das Userscript <b>„Favoriten-Archiv API-Bridge“</b> in Tampermonkey und lade diese Seite neu.`; }
+function showKeyDialog(){
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>🔑 nhentai API-Key</h2>
+  <p>Erstelle einen Key in deinen <a href="https://nhentai.net/user/settings#apikeys" target="_blank" rel="noopener noreferrer">nhentai-Einstellungen</a> und füge ihn hier ein. Er bleibt nur in diesem Browser gespeichert – nicht im Backup und nicht auf GitHub.</p>
+  <input data-keyinput type="password" autocomplete="off" placeholder="${Api.key() ? 'Key ist gespeichert – zum Ändern neuen einfügen' : 'API-Key einfügen'}" style="width:100%">
+  <div id="keyRes" class="muted" style="margin-top:10px;min-height:20px"></div>
+  <div class="row foot">${Api.key() ? '<button data-keydel class="danger">Key entfernen</button>' : ''}<button data-x>Abbrechen</button><button class="primary" data-keysave>Speichern &amp; testen</button></div>`;
+  showModal('key'); setTimeout(() => $('[data-keyinput]')?.focus(), 50);
+}
+async function saveKey(){
+  const v = $('[data-keyinput]').value.trim(), res = $('#keyRes');
+  if (v) Api.setKey(v);
+  if (!Api.key()) { res.textContent = 'Bitte einen Key einfügen.'; return; }
+  res.textContent = 'Teste Verbindung …';
+  try { const u = await Api.get('/user', 'misc', 0); res.innerHTML = `✓ Verbunden als <b>${esc(u.username)}</b>`; setTimeout(showSyncDialog, 900); }
+  catch (e) { res.innerHTML = '❌ ' + (e.message === 'CORS' ? corsHelp() : esc(e.message)); }
+}
+function showSyncDialog(){
+  if (!Api.key()) return showKeyDialog();
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>🔄 Mit nhentai synchronisieren</h2>
+  <p class="muted" style="margin-top:-6px">${connHint()} · <a href="#" data-key>Key ändern</a></p>
+  <div class="row"><button class="primary" data-sync="quick">🆕 Neue holen</button><button data-sync="full">🔄 Komplett abgleichen</button></div>
+  <p class="muted" style="font-size:13px"><b>Neue holen</b> stoppt, sobald eine Favoriten-Seite nur Bekanntes enthält – meist wenige Sekunden.<br>
+  <b>Komplett abgleichen</b> liest alle Favoriten-Seiten (nhentai erlaubt 15 pro Minute, also ca. 4 s pro Seite) und erkennt dabei geänderte Tags und entfernte Favoriten.</p>
+  <div id="syncProg" style="min-height:22px;font-weight:600"></div>
+  <div class="row foot"><button data-x>Schließen</button><button data-syncstop class="hidden">⏹ Abbrechen</button></div>`;
+  showModal('sync');
+}
+async function runSync(mode){
+  const prog = h => { const el = $('#syncProg'); if (el) el.innerHTML = h; };
+  document.querySelectorAll('#modalBody [data-sync]').forEach(b => b.disabled = true);
+  $('[data-syncstop]')?.classList.remove('hidden');
+  Api.onWait = ms => prog(`⏳ Rate-Limit – warte ${Math.round(ms/1000)} s …`);
+  S.sync = {abort:false};
+  try {
+    if (!S.meta.cdn || Date.now() - (S.meta.cdn.at||0) > 864e5) {
+      try { const c = await Api.get('/cdn', 'misc', 0); S.meta.cdn = {image_servers:c.image_servers||[], thumb_servers:c.thumb_servers||[], at:Date.now()}; saveMeta(); } catch (e) { if (e.message === 'CORS') throw e; }
+    }
+    const items = []; let page = 1, total = 1;
+    while (page <= total && !S.sync.abort) {
+      prog(`Favoriten-Seite ${page}${total > 1 ? ` / ${total} (noch ca. ${Math.ceil((total - page) * GAP.fav / 60000)} Min.)` : ''} …`);
+      const r = await Api.get('/favorites?page=' + page, 'fav', GAP.fav);
+      total = r.num_pages || 1;
+      const res = r.result || []; items.push(...res);
+      page++;
+      if (!res.length) break;
+      if (mode === 'quick' && res.every(x => S.all.get(String(x.id))?.status === 'active')) break;
+    }
+    const complete = !S.sync.abort && page > total;
+    const dict = S.meta.tagDict || (S.meta.tagDict = {});
+    const need = [...new Set(items.flatMap(x => x.tag_ids || []))].filter(id => !dict[id]);
+    for (let i = 0; i < need.length && !S.sync.abort; i += 100) {
+      prog(`Tags auflösen ${Math.min(i + 100, need.length)} / ${need.length} …`);
+      const list = await Api.get('/tags/ids?ids=' + need.slice(i, i + 100).join(','), 'tags', GAP.tags);
+      for (const t of list) dict[t.id] = [t.type, t.name];
+    }
+    saveMeta();
+    if (!items.length) { prog(S.sync.abort ? 'Abgebrochen.' : 'Keine Favoriten gefunden.'); return; }
+    S.sync = null;
+    showReview(buildReview({galleries:items.map(fromListItem), favIds: complete ? items.map(x => String(x.id)) : null, errors:[]}));
+  } catch (e) {
+    prog('❌ ' + (e.message === 'CORS' ? corsHelp() : esc(e.message)));
+  } finally {
+    S.sync = null; Api.onWait = null;
+    document.querySelectorAll('#modalBody [data-sync]').forEach(b => b.disabled = false);
+    $('[data-syncstop]')?.classList.add('hidden');
+  }
+}
+function onSyncClick(e){
+  let el;
+  if (e.target.closest('[data-key]')) { e.preventDefault(); return showKeyDialog(); }
+  if (e.target.closest('[data-keysave]')) return saveKey();
+  if (e.target.closest('[data-keydel]')) { Api.setKey(''); toast('API-Key entfernt'); return closeModal(); }
+  if ((el = e.target.closest('[data-sync]'))) return runSync(el.dataset.sync);
+  if (e.target.closest('[data-syncstop]') && S.sync) { S.sync.abort = true; $('#syncProg').textContent = 'Breche ab …'; }
+}
+
+/* ---------- Details (Seitenpfade, Upload-Datum) im Hintergrund ---------- */
+const Detail = {queue:[], running:false};
+function applyDetail(g, d){
+  const dict = S.meta.tagDict || (S.meta.tagDict = {}), tags = {}; TAG_TYPES.forEach(t => tags[t] = []);
+  for (const t of (d.tags||[])) { dict[t.id] = [t.type, t.name]; if (tags[t.type]) tags[t.type].push(t.name); }
+  if (d.media_id) g.media_id = String(d.media_id);
+  if (d.title?.pretty) g.title_pretty = d.title.pretty;
+  if (!g.title_english && d.title?.english) g.title_english = d.title.english;
+  if (!g.title_japanese && d.title?.japanese) g.title_japanese = d.title.japanese;
+  if (d.upload_date) g.upload_date = new Date(d.upload_date * 1000).toISOString().slice(0,10);
+  if (d.thumbnail?.path) g.thumb_path = d.thumbnail.path;
+  if (d.cover?.path) g.cover_path = d.cover.path;
+  const pp = (d.pages||[]).slice().sort((a,b) => a.number - b.number).map(p => p.path).filter(Boolean);
+  if (pp.length) { g.page_paths = pp; g.pages = pp.length; }
+  if (!TAG_TYPES.some(t => (g.tags[t]||[]).length)) g.tags = normTags(tags);
+  hayCache.delete(g);
+}
+async function fetchDetail(g){
+  const d = await Api.get('/galleries/' + g.id, 'gal', GAP.gal);
+  applyDetail(g, d); await DB.put([g]); replaceCard(g); return g;
+}
+function queueDetails(ids){
+  for (const id of ids) if (!Detail.queue.includes(id)) Detail.queue.push(id);
+  runDetails();
+}
+async function runDetails(){
+  if (Detail.running || !Api.key()) return;
+  Detail.running = true;
+  const el = $('#detailProg');
+  while (Detail.queue.length) {
+    el.textContent = `Lade Details … noch ${Detail.queue.length} (ca. ${Math.ceil(Detail.queue.length * GAP.gal / 60000)} Min.)`;
+    const g = S.all.get(Detail.queue.shift());
+    if (!g || (g.page_paths||[]).length) continue;
+    try { await fetchDetail(g); }
+    catch (e) { if (/autorisiert|CORS|Bridge|Rate-Limit/.test(e.message)) { el.textContent = 'Details pausiert: ' + (e.message === 'CORS' ? 'Bridge-Userscript fehlt' : e.message); Detail.queue = []; Detail.running = false; saveMeta(); return; } }
+  }
+  el.textContent = ''; Detail.running = false; saveMeta(); rebuildDatalist();
 }
 
 /* ---------- Backup / Export ---------- */
@@ -877,14 +1070,14 @@ function exportCSV(){
 function showHelp(){
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Anleitung</h2><div class="help">
   <h3>So funktioniert's</h3>
-  <p>nhentai erlaubt keinen direkten Zugriff von fremden Seiten. Darum holt das <b>Userscript</b> die Daten auf nhentai.net und speichert sie als JSON-Datei – die liest du hier ein. Alles wird nur <b>lokal in deinem Browser</b> gespeichert (IndexedDB), nichts landet auf GitHub. Bilder werden direkt von nhentai geladen.</p>
+  <p>Das Tool liest deine Favoriten über die offizielle nhentai-API mit deinem <b>API-Key</b>. Alles wird nur <b>lokal in deinem Browser</b> gespeichert (IndexedDB), nichts landet auf GitHub. Falls der Browser den direkten Zugriff blockiert, hilft das Userscript <b>„Favoriten-Archiv API-Bridge“</b>.</p>
   <h3>Update-Routine</h3>
   <ol>
-    <li>Auf <a href="https://nhentai.net/favorites/" target="_blank" rel="noopener noreferrer">nhentai.net → Favoriten</a> im Skript-Panel klicken:
-      <ul><li><b>🆕 Neue holen</b> – schnell: geht alle Favoriten-Seiten durch, lädt aber nur Details für neue Einträge. Erkennt auch entfernte Favoriten.</li>
-      <li><b>🔄 Alles prüfen</b> – langsam: lädt alle Galerien neu, um geänderte Tags zu finden. Ab und zu sinnvoll.</li></ul></li>
-    <li>Die heruntergeladene Datei hier mit <b>Import / Update</b> oder per Drag &amp; Drop einlesen.</li>
+    <li><b>🔄 Sync</b> oben klicken:
+      <ul><li><b>🆕 Neue holen</b> – schnell, holt nur neu favorisierte.</li>
+      <li><b>🔄 Komplett abgleichen</b> – liest alle Favoriten-Seiten (ca. 4 s pro Seite), findet geänderte Tags und entfernte Favoriten.</li></ul></li>
     <li>Im Prüf-Dialog entscheiden: neue übernehmen, Tag-Änderungen annehmen/ablehnen, entfernte markieren oder löschen.</li>
+    <li>Seitenpfade und Upload-Datum neuer Einträge werden danach im Hintergrund nachgeladen (bzw. beim Öffnen im Reader).</li>
   </ol>
   <h3>Bedienung</h3>
   <ul>
@@ -900,7 +1093,8 @@ function showHelp(){
 
 /* ---------- Events ---------- */
 function bind(){
-  $('#btnImport').onclick = $('#emptyImport').onclick = () => $('#fileImport').click();
+  $('#btnSync').onclick = $('#emptySync').onclick = showSyncDialog;
+  $('#emptyImport').onclick = () => $('#fileImport').click();
   $('#emptyHelp').onclick = showHelp;
   $('#fileImport').onchange = e => { handleFiles([...e.target.files]); e.target.value = ''; };
   $('#fileRestore').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
@@ -911,6 +1105,15 @@ function bind(){
   $('#menuPop').onclick = async e => {
     const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return;
     $('#menuPop').classList.add('hidden');
+    if (a === 'key') showKeyDialog();
+    if (a === 'import') $('#fileImport').click();
+    if (a === 'details') {
+      if (!Api.key()) return showKeyDialog();
+      const ids = [...S.all.values()].filter(g => !(g.page_paths||[]).length).map(g => g.id);
+      if (!ids.length) return toast('Alle Details sind vollständig ✓');
+      toast(`Lade Details für ${ids.length} Einträge im Hintergrund (ca. ${Math.ceil(ids.length * GAP.gal / 60000)} Min.) – Seite einfach offen lassen.`, 6000);
+      queueDetails(ids);
+    }
     if (a === 'backup') exportBackup();
     if (a === 'restore') $('#fileRestore').click();
     if (a === 'csv') exportCSV();
@@ -946,7 +1149,7 @@ function bind(){
   };
   $('#grid').onclick = e => { const c = e.target.closest('.card'); if (c) openDetail(c.dataset.id); };
   $('#sort').onchange = e => { S.sort = e.target.value; if (S.sort === 'random') S.rnd.clear(); ls.set('sort', S.sort); render(); };
-  $('#segStatus').onclick = e => { const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x === b)); render(); };
+  $('#segStatus').onclick = e => { const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; ls.set('status', S.f.status); document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x === b)); render(); };
   $('#fUnread').onchange = e => { S.f.unread = e.target.checked; render(); };
   $('#fRating').onchange = e => { S.f.minRating = +e.target.value; render(); };
   $('#facetType').innerHTML = TAG_TYPES.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
@@ -975,7 +1178,7 @@ function bind(){
   const mb = $('#modalBody');
   mb.addEventListener('click', onModalClick); mb.addEventListener('change', onModalChange);
   mb.addEventListener('input', onModalInput); mb.addEventListener('keydown', onModalKey);
-  $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && S.modal !== 'review') closeModal(); });
+  $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && !['review','sync','key'].includes(S.modal)) closeModal(); });
 
   $('#rClose').onclick = closeReader;
   $('#rMode').onchange = e => { R.mode = e.target.value; ls.set('rmode', R.mode); buildReader(); };
@@ -1018,10 +1221,12 @@ function bind(){
 
 /* ---------- Start ---------- */
 (async () => {
-  S.sort = ls.get('sort','fav'); S.facetType = ls.get('facetType','tag');
+  S.sort = ls.get('sort','fav'); S.facetType = ls.get('facetType','tag'); S.f.status = ls.get('status','all');
+  document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x.dataset.status === S.f.status));
   if (ls.get('discreet', false)) document.body.classList.add('discreet');
   $('#sort').value = S.sort;
   bind();
+  Api.init();
   try { await DB.open(); }
   catch (e) { $('#empty').classList.remove('hidden'); $('#empty').innerHTML = '<h2>Speicher nicht verfügbar</h2><p>Dein Browser blockiert IndexedDB (z. B. im privaten Modus). Bitte in einem normalen Fenster öffnen.</p>'; return; }
   try { navigator.storage?.persist?.(); } catch {}
