@@ -276,6 +276,8 @@ textarea{width:100%;min-height:70px;resize:vertical}
 const TAG_TYPES = ['parody','character','tag','artist','group','language','category'];
 const TYPE_LABEL = {parody:'Parodien',character:'Charaktere',tag:'Tags',artist:'Künstler',group:'Gruppen',language:'Sprachen',category:'Kategorien'};
 const TYPE_KEY = {parody:'parodie',character:'charakter',tag:'tag',artist:'künstler',group:'gruppe',language:'sprache',category:'kategorie'};
+const TYPE_ALIAS = {tags:'tag',artists:'artist',parodies:'parody',characters:'character',groups:'group',languages:'language',categories:'category'};
+const normType = t => { t = String(t||'').toLowerCase().trim(); return TYPE_ALIAS[t] || t; };
 const KEY_TYPE = Object.fromEntries(Object.entries(TYPE_KEY).map(([a,b]) => [b,a]));
 const PAGE_SIZE = 60;
 const $ = s => document.querySelector(s);
@@ -757,7 +759,7 @@ function compare(old, neu){
     const same = k === 'cover_url' ? normHost(merged[k]) === normHost(v) : JSON.stringify(merged[k]) === JSON.stringify(v);
     if (!same) { merged[k] = v; silent = true; }
   };
-  ['media_id','cover_url','thumb_path','page_exts','default_ext','page_urls','upload_date','title_pretty'].forEach(k => setT(k, neu[k]));
+  ['media_id','cover_url','thumb_path','cover_path','page_paths','page_exts','default_ext','page_urls','upload_date','title_pretty'].forEach(k => setT(k, neu[k]));
   const srcUpgrade = old.src !== neu.src && neu.src !== 'csv';
   if (srcUpgrade) { setT('title_english', neu.title_english); setT('title_japanese', neu.title_japanese); merged.src = neu.src; silent = true; }
   if (!old.pages && neu.pages) { merged.pages = neu.pages; silent = true; }
@@ -921,7 +923,7 @@ async function handleFiles(files){
 function fromListItem(x){
   const dict = S.meta.tagDict || {}, tags = {}; TAG_TYPES.forEach(t => tags[t] = []);
   let complete = true;
-  for (const id of (x.tag_ids||[])) { const d = dict[id]; if (!d) { complete = false; break; } if (tags[d[0]]) tags[d[0]].push(d[1]); }
+  for (const id of (x.tag_ids||[])) { const d = dict[id]; if (!d) { complete = false; break; } const t = normType(d[0]); if (tags[t]) tags[t].push(d[1]); }
   return {id:String(x.id), media_id:String(x.media_id||''), title_english:x.english_title||'', title_japanese:x.japanese_title||'', title_pretty:'',
     tags:normTags(complete ? tags : {}), pages:x.num_pages||0, upload_date:'', cover_url:'', thumb_path:x.thumbnail||'', page_exts:[], default_ext:'', src:'api2'};
 }
@@ -980,12 +982,23 @@ async function runSync(mode){
     for (let i = 0; i < need.length && !S.sync.abort; i += 100) {
       prog(`Tags auflösen ${Math.min(i + 100, need.length)} / ${need.length} …`);
       const list = await Api.get('/tags/ids?ids=' + need.slice(i, i + 100).join(','), 'tags', GAP.tags);
-      for (const t of list) dict[t.id] = [t.type, t.name];
+      for (const t of list) dict[t.id] = [normType(t.type), t.name];
     }
     saveMeta();
     if (!items.length) { prog(S.sync.abort ? 'Abgebrochen.' : 'Keine Favoriten gefunden.'); return; }
+    const batch = {galleries:items.map(fromListItem), favIds: complete ? items.map(x => String(x.id)) : null, errors:[]};
+    // Tag-Änderungen aus der Favoritenliste mit der vollständigen Galerie-Abfrage gegenprüfen
+    const suspects = buildReview(batch).changes.filter(c => c.diff.some(d => d.type)).map(c => c.neu);
+    let checked = 0;
+    for (const neu of suspects) {
+      if (S.sync.abort) { neu.tags = normTags({}); continue; }
+      prog(`Prüfe Tag-Änderungen ${++checked} / ${suspects.length} …`);
+      try { detailIntoImport(neu, await Api.get('/galleries/' + neu.id, 'gal', GAP.gal)); }
+      catch (e) { if (/autorisiert|CORS|Bridge/.test(e.message)) throw e; neu.tags = normTags({}); }
+    }
+    saveMeta();
     S.sync = null;
-    showReview(buildReview({galleries:items.map(fromListItem), favIds: complete ? items.map(x => String(x.id)) : null, errors:[]}));
+    showReview(buildReview(batch));
   } catch (e) {
     prog('❌ ' + (e.message === 'CORS' ? corsHelp() : esc(e.message)));
   } finally {
@@ -1005,9 +1018,23 @@ function onSyncClick(e){
 
 /* ---------- Details (Seitenpfade, Upload-Datum) im Hintergrund ---------- */
 const Detail = {queue:[], running:false};
-function applyDetail(g, d){
+function tagsFromDetail(d){
   const dict = S.meta.tagDict || (S.meta.tagDict = {}), tags = {}; TAG_TYPES.forEach(t => tags[t] = []);
-  for (const t of (d.tags||[])) { dict[t.id] = [t.type, t.name]; if (tags[t.type]) tags[t.type].push(t.name); }
+  for (const t of (d.tags||[])) { const ty = normType(t.type); dict[t.id] = [ty, t.name]; if (tags[ty]) tags[ty].push(t.name); }
+  return normTags(tags);
+}
+// Detaildaten in ein Import-Objekt übernehmen (für die Gegenprüfung beim Sync)
+function detailIntoImport(neu, d){
+  neu.tags = tagsFromDetail(d);
+  if (d.title?.pretty) neu.title_pretty = d.title.pretty;
+  if (d.upload_date) neu.upload_date = new Date(d.upload_date * 1000).toISOString().slice(0,10);
+  if (d.thumbnail?.path) neu.thumb_path = d.thumbnail.path;
+  if (d.cover?.path) neu.cover_path = d.cover.path;
+  const pp = (d.pages||[]).slice().sort((a,b) => a.number - b.number).map(p => p.path).filter(Boolean);
+  if (pp.length) { neu.page_paths = pp; neu.pages = pp.length; }
+}
+function applyDetail(g, d){
+  const tags = tagsFromDetail(d);
   if (d.media_id) g.media_id = String(d.media_id);
   if (d.title?.pretty) g.title_pretty = d.title.pretty;
   if (!g.title_english && d.title?.english) g.title_english = d.title.english;
