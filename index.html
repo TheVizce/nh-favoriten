@@ -317,21 +317,28 @@ function saveMeta(){ DB.setMeta(S.meta); }
 
 /* ---------- Bilder (mit Fallback über Server & Dateiendungen) ---------- */
 const hostMemo = {page:null, thumb:null};
+// nhentai-CDN: Server nur noch nummeriert (t1–t4 / i1–i4); Cover heißen cover.<ext>.webp, Seiten <n>.<ext>
+const LEGACY_HOST = /^https:\/\/(t|i)\.nhentai\.net\//;
 function candidates(kind, g, page){
   const out = [];
-  if (kind === 'page' && g.page_urls && g.page_urls[page-1]) out.push(g.page_urls[page-1]);
-  if (kind === 'cover' && g.cover_url) out.push(g.cover_url);
+  if (kind === 'page' && g.page_urls && g.page_urls[page-1]) out.push(g.page_urls[page-1].replace(LEGACY_HOST, 'https://$11.nhentai.net/'));
+  if (kind === 'cover' && g.cover_url && !LEGACY_HOST.test(g.cover_url)) out.push(g.cover_url);
   if (!g.media_id) return out;
-  const pref = kind === 'page' ? (g.page_exts?.[page-1] || g.page_exts?.[0] || g.default_ext || 'jpg')
-                               : ((g.cover_url||'').match(/\/cover\.([a-z]+)/i)?.[1] || g.page_exts?.[0] || g.default_ext || 'jpg');
-  const exts = [...new Set([pref,'webp','jpg','png','gif'])];
-  const hosts = kind === 'page' ? ['i','i1','i2','i3','i4'] : ['t','t1','t2','t3','t4'];
   const key = kind === 'page' ? 'page' : 'thumb';
+  const hosts = [1,2,3,4].map(n => (kind === 'page' ? 'i' : 't') + n);
   const first = hostMemo[key] || hosts[0];
   const hs = [first, ...hosts.filter(h => h !== first)];
-  const file = kind === 'page' ? page : 'cover';
-  for (const e of exts) out.push(`https://${hs[0]}.nhentai.net/galleries/${g.media_id}/${file}.${e}`);
-  for (const h of hs.slice(1)) out.push(`https://${h}.nhentai.net/galleries/${g.media_id}/${file}.${pref}`);
+  const base = h => `https://${h}.nhentai.net/galleries/${g.media_id}/`;
+  if (kind === 'page') {
+    const pref = g.page_exts?.[page-1] || g.page_exts?.[0] || g.default_ext || 'jpg';
+    for (const h of hs) out.push(`${base(h)}${page}.${pref}`);
+    for (const e of ['jpg','webp','png','gif']) if (e !== pref) out.push(`${base(hs[0])}${page}.${e}`);
+  } else {
+    const pref = (g.cover_url||'').match(/\/(?:cover|thumb)\.([a-z]+)/i)?.[1] || g.page_exts?.[0] || g.default_ext || 'jpg';
+    for (const h of hs) out.push(`${base(h)}cover.${pref}.webp`);
+    for (const e of ['jpg','png','webp']) if (e !== pref) out.push(`${base(hs[0])}cover.${e}.webp`);
+    out.push(`${base(hs[0])}cover.${pref}`);
+  }
   return [...new Set(out)];
 }
 function loadImg(img, kind, g, page){
