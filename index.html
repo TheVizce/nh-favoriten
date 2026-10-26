@@ -188,6 +188,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <button data-act="backup">💾 Backup exportieren (JSON)</button>
       <button data-act="restore">♻️ Backup einspielen</button>
       <button data-act="csv">📄 Archiv als CSV exportieren</button>
+      <button data-act="covers">🖼 Cover-Sicherung an/aus</button>
       <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
       <button data-act="help">❓ Anleitung</button>
       <button data-act="wipe" class="danger">🗑 Archiv komplett löschen</button>
@@ -236,6 +237,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
     </section>
     <div class="stat" id="stat"></div>
     <div class="stat" id="storageInfo" style="border:none;padding-top:4px"></div>
+    <div class="stat" id="coverProg" style="border:none;padding-top:4px"></div>
     <div class="stat" id="detailProg" style="border:none;padding-top:4px"></div>
   </aside>
 
@@ -330,10 +332,12 @@ const S = {
 const DB = {
   db: null,
   open(){ return new Promise((res,rej) => {
-    const r = indexedDB.open('nh-fav-archiv', 1);
+    const r = indexedDB.open('nh-fav-archiv', 2);
     r.onupgradeneeded = () => { const d = r.result;
       if (!d.objectStoreNames.contains('g')) d.createObjectStore('g', {keyPath:'id'});
-      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta'); };
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
+      if (!d.objectStoreNames.contains('covers')) d.createObjectStore('covers'); };   // v2: lokal gesicherte Cover (Blob je Galerie-ID)
+    r.onblocked = () => toast('Bitte andere offene Tabs dieses Tools schließen und neu laden.', 8000);
     r.onsuccess = () => { this.db = r.result; res(); };
     r.onerror = () => rej(r.error);
   });},
@@ -397,6 +401,15 @@ const Api = {
       if (d.nhb === 'res') { const w = this.waiters.get(d.id); if (w) { this.waiters.delete(d.id); w(d); } }
     });
     window.postMessage({nhb:'ping'}, '*');
+  },
+  bin(url){
+    if (!this.bridge) return Promise.reject(new Error('nobridge'));
+    return new Promise((res, rej) => {
+      const id = ++this.seq;
+      const t = setTimeout(() => { this.waiters.delete(id); rej(new Error('Bridge-Userscript antwortet nicht')); }, 60000);
+      this.waiters.set(id, d => { clearTimeout(t); if (d.status === 0 && d.body === 'blocked') rej(new Error('nobridge')); else res({status:d.status, buf:d.buf, type:d.type}); });
+      window.postMessage({nhb:'bin', id, url}, '*');
+    });
   },
   raw(path){
     const url = API_BASE + path, headers = {}, k = this.key();
@@ -466,14 +479,103 @@ function candidates(kind, g, page){
   return [...new Set(out)];
 }
 function loadImg(img, kind, g, page){
-  const c = candidates(kind, g, page);
   img.referrerPolicy = 'no-referrer';
-  if (!c.length) { img.style.visibility = 'hidden'; return; }
+  if (kind === 'cover' && Covers.has(g.id)) {
+    Covers.url(g.id).then(u => { if (u) img.src = u; else loadNet(img, kind, g, page); });
+    return;
+  }
+  loadNet(img, kind, g, page);
+}
+function loadNet(img, kind, g, page){
+  const c = candidates(kind, g, page);
+  const giveUp = () => {
+    img.onerror = null;
+    if (kind !== 'page' && Covers.has(g.id)) Covers.url(g.id).then(u => { if (u) img.src = u; else img.style.visibility = 'hidden'; });
+    else img.style.visibility = 'hidden';
+  };
+  if (!c.length) return giveUp();
   let i = 0;
-  img.onerror = () => { i++; if (i < c.length) img.src = c[i]; else { img.onerror = null; img.style.visibility = 'hidden'; } };
-  img.onload = () => { const m = img.src.match(/^https:\/\/(\w+)\.nhentai\.net\/galleries/); if (m) hostMemo[kind === 'page' ? 'page' : 'thumb'] = m[1]; };
+  img.onerror = () => { i++; if (i < c.length) img.src = c[i]; else giveUp(); };
+  img.onload = () => {
+    const m = img.src.match(/^https:\/\/(\w+)\.nhentai\.net\/galleries/); if (m) hostMemo[kind === 'page' ? 'page' : 'thumb'] = m[1];
+    if (kind === 'cover' && m) Covers.okUrl.set(g.id, img.src);
+  };
   img.src = c[0];
 }
+
+/* ---------- Cover lokal sichern (IndexedDB-Bereich "covers") ---------- */
+const Covers = {
+  ids: new Set(), urls: new Map(), okUrl: new Map(), queue: [], running: false, mode: null, stopped: false,
+  enabled(){ return ls.get('covercache', true); },
+  has(id){ return this.ids.has(id); },
+  async init(){ try { (await DB.run('covers','readonly', s => s.getAllKeys())).forEach(k => this.ids.add(String(k))); } catch {} },
+  async url(id){
+    if (this.urls.has(id)) return this.urls.get(id);
+    try {
+      const rec = await DB.run('covers','readonly', s => s.get(id));
+      if (!rec?.blob) { this.ids.delete(id); return null; }
+      const u = URL.createObjectURL(rec.blob); this.urls.set(id, u); return u;
+    } catch { return null; }
+  },
+  async remove(ids){
+    ids.forEach(id => { this.ids.delete(id); const u = this.urls.get(id); if (u) URL.revokeObjectURL(u); this.urls.delete(id); });
+    await quiet(DB.run('covers','readwrite', s => { ids.forEach(id => s.delete(id)); }));
+  },
+  async clearAll(){ await quiet(DB.run('covers','readwrite', s => { s.clear(); })); this.urls.forEach(u => URL.revokeObjectURL(u)); this.urls.clear(); this.ids.clear(); },
+  enqueue(ids){
+    if (!this.enabled()) return;
+    for (const id of ids) if (!this.ids.has(id) && !this.queue.includes(id)) this.queue.push(id);
+    this.run();
+  },
+  enqueueMissing(){ this.enqueue([...S.all.values()].sort((a,b) => (a.fav_index??0) - (b.fav_index??0)).map(g => g.id)); },
+  async fetchBlob(url){
+    // 1) direkt (klappt nur, wenn der Bildserver CORS erlaubt), 2) über das Bridge-Userscript
+    if (this.mode !== 'bridge') {
+      try {
+        const r = await fetch(url, {mode:'cors', referrerPolicy:'no-referrer', credentials:'omit'});
+        this.mode = 'direct';
+        return r.ok ? await r.blob() : {status:r.status};
+      } catch { if (this.mode === 'direct') return {status:0}; }
+    }
+    if (!Api.bridge) throw new Error('nobridge');
+    this.mode = 'bridge';
+    const r = await Api.bin(url);
+    return r.status >= 200 && r.status < 300 && r.buf ? new Blob([r.buf], {type:r.type || 'image/webp'}) : {status:r.status};
+  },
+  async run(){
+    if (this.running || this.stopped || !this.enabled()) return;
+    this.running = true;
+    const el = $('#coverProg');
+    let saved = 0;
+    try {
+      while (this.queue.length && this.enabled()) {
+        if (document.visibilityState === 'hidden') { await sleep(2000); continue; }
+        const g = S.all.get(this.queue.shift());
+        if (!g || this.ids.has(g.id)) continue;
+        el.textContent = `Sichere Cover … noch ${this.queue.length + 1}`;
+        const urls = [...new Set([this.okUrl.get(g.id), ...candidates('cover', g)].filter(Boolean))].slice(0, 4);
+        for (const u of urls) {
+          const b = await this.fetchBlob(u);
+          await sleep(350);   // schonend: max. ~3 Bilder pro Sekunde
+          if (b instanceof Blob && b.size > 500 && /^image\//.test(b.type || 'image/')) {
+            await DB.run('covers','readwrite', s => { s.put({blob:b, at:Date.now()}, g.id); });
+            this.ids.add(g.id); saved++; break;
+          }
+          if (b.status === 429) { el.textContent = 'Cover-Sicherung pausiert (Bildserver bremst) – geht beim nächsten Start weiter.'; this.queue = []; return; }
+        }
+      }
+      el.textContent = '';
+    } catch (e) {
+      this.queue = []; this.stopped = true;
+      el.textContent = e.message === 'nobridge'
+        ? 'Cover-Sicherung braucht das Bridge-Userscript (ab v4.1).'
+        : 'Cover-Sicherung gestoppt (Speicherfehler).';
+    } finally {
+      this.running = false;
+      if (saved) { renderStat(); }
+    }
+  }
+};
 
 /* ---------- Anzeige-Helfer ---------- */
 const dispTitle = g => g.title_pretty || g.title_english || g.title_japanese || ('#' + g.id);
@@ -595,7 +697,8 @@ function renderStat(){
   let a = 0, r = 0, read = 0;
   for (const g of S.all.values()) { if (g.status === 'active') a++; else r++; if (g.user.read) read++; }
   renderStorageInfo();
-  $('#stat').innerHTML = `${a} Favoriten · ${r} entfernt · ${read} gelesen<br>Letztes Update: ${S.meta.lastImport ? new Date(S.meta.lastImport).toLocaleString('de-DE') : '–'}`;
+  const cov = [...S.all.keys()].filter(id => Covers.has(id)).length;
+  $('#stat').innerHTML = `${a} Favoriten · ${r} entfernt · ${read} gelesen<br>🖼 Cover gesichert: ${cov} / ${S.all.size}${Covers.enabled() ? '' : ' (aus)'}<br>Letztes Update: ${S.meta.lastImport ? new Date(S.meta.lastImport).toLocaleString('de-DE') : '–'}`;
 }
 function rebuildDatalist(){
   const keys = new Set();
@@ -667,7 +770,7 @@ function onModalClick(e){
     if (t.closest('[data-reactivate]')) { g.status = 'active'; delete g.removed_at; quiet(DB.put([g])); render(); return openDetail(g.id); }
     if (t.closest('[data-delete]')) {
       if (!confirm('Diesen Eintrag endgültig aus dem Archiv löschen? (Bewertung, Notizen und Listen gehen verloren)')) return;
-      quiet(DB.del([g.id])); S.all.delete(g.id); closeModal(); render(); toast('Gelöscht'); return;
+      quiet(DB.del([g.id])); Covers.remove([g.id]); S.all.delete(g.id); closeModal(); render(); toast('Gelöscht'); return;
     }
   }
   if (S.modal === 'review') onReviewClick(e);
@@ -956,6 +1059,7 @@ async function applyReview(){
   if (rv.removed.length && rv.rmMode === 'mark') parts.push(`${rv.removed.length} als entfernt gekennzeichnet`);
   toast(parts.length ? '✓ ' + parts.join(' · ') : '✓ Archiv ist aktuell');
   if (Api.key()) queueDetails(newRecs.map(r => r.id));
+  Covers.enqueue(newRecs.map(r => r.id));
 }
 
 async function handleFiles(files){
@@ -1111,7 +1215,7 @@ function applyDetail(g, d){
 }
 async function fetchDetail(g){
   const d = await Api.get('/galleries/' + g.id, 'gal', GAP.gal);
-  applyDetail(g, d); await quiet(DB.put([g])); replaceCard(g); return g;
+  applyDetail(g, d); await quiet(DB.put([g])); replaceCard(g); if (!Covers.has(g.id)) Covers.enqueue([g.id]); return g;
 }
 function queueDetails(ids){
   for (const id of ids) if (!Detail.queue.includes(id)) Detail.queue.push(id);
@@ -1176,6 +1280,7 @@ function showHelp(){
     <li><b>Filter-Chips</b>: Klick wechselt zwischen einschließen (grün) und ausschließen (rot). Shift+Klick auf einen Tag schließt direkt aus.</li>
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
+    <li><b>Cover-Sicherung</b>: Cover werden im Hintergrund lokal gespeichert und bleiben sichtbar, auch wenn eine Galerie auf nhentai gelöscht wird. Sie sind <i>nicht</i> im JSON-Backup enthalten.</li>
     <li><b>Backup</b> (Menü ⋯): Exportiert alles inkl. Bewertungen, Notizen, Listen – damit kannst du auch auf ein anderes Gerät umziehen.</li>
   </ul>
   <p class="muted">Tipp: Browser-Daten löschen entfernt auch das Archiv – mach ab und zu ein Backup.</p></div>`;
@@ -1209,11 +1314,22 @@ function bind(){
     if (a === 'restore') $('#fileRestore').click();
     if (a === 'csv') exportCSV();
     if (a === 'help') showHelp();
+    if (a === 'covers') {
+      const on = !Covers.enabled(); ls.set('covercache', on);
+      if (on) { Covers.stopped = false; Covers.enqueueMissing(); toast('Cover-Sicherung an – läuft im Hintergrund.'); }
+      else {
+        Covers.queue = []; $('#coverProg').textContent = '';
+        if (Covers.ids.size && confirm(`Cover-Sicherung aus. Die ${Covers.ids.size} bereits gesicherten Cover auch löschen?\n(OK = löschen, Abbrechen = behalten)`)) { await Covers.clearAll(); render(); }
+        toast('Cover-Sicherung aus');
+      }
+      renderStat();
+    }
     if (a === 'discreet') { const on = document.body.classList.toggle('discreet'); ls.set('discreet', on); toast(on ? 'Diskret-Modus an (Hover zeigt Cover)' : 'Diskret-Modus aus'); }
     if (a === 'wipe') {
       if (!confirm('Wirklich das GESAMTE Archiv löschen – inkl. Bewertungen, Notizen und Listen?')) return;
       if (!confirm('Letzte Warnung. Vorher ein Backup gemacht?')) return;
       try { await DB.clear(); } catch { return; }
+      await Covers.clearAll();
       S.all.clear(); S.meta = {lists:[]}; saveMeta(); rebuildDatalist(); render(); toast('Archiv gelöscht');
     }
   };
@@ -1324,7 +1440,9 @@ function bind(){
   try { await navigator.storage?.persist?.(); } catch {}
   const m = await DB.getMeta(); if (m) S.meta = {lists:[], ...m};
   for (const g of await DB.all()) { g.user = {...defUser(), ...(g.user||{})}; g.tags = normTags(g.tags); S.all.set(g.id, g); }
+  await Covers.init();
   rebuildDatalist(); render(); renderStorageInfo();
+  setTimeout(() => Covers.enqueueMissing(), 4000);   // erst nach dem Laden der sichtbaren Cover starten
   // Offene Änderungen sofort sichern, wenn der Tab geschlossen oder in den Hintergrund gelegt wird
   addEventListener('pagehide', flushSaves);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
