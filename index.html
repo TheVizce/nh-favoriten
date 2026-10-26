@@ -150,6 +150,8 @@ textarea{width:100%;min-height:70px;resize:vertical}
 #rstage.scroll img.ok{min-height:0;background:none}
 #rstage.scroll.fitw img{width:100%;max-width:none}
 
+#errbar{position:sticky;top:57px;z-index:19;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 16px;background:#5a1420;border-bottom:1px solid var(--bad);color:#ffe3e7}
+#errbar button{background:none;border-color:rgba(255,255,255,.3)}
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:90;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
 #toast.on{opacity:1}
 #drop{position:fixed;inset:12px;z-index:100;border:3px dashed var(--accent);border-radius:18px;background:rgba(18,18,20,.88);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;pointer-events:none}
@@ -193,6 +195,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
   </div>
 </header>
 
+<div id="errbar" class="hidden"><span></span><button class="icon" onclick="this.parentNode.classList.add('hidden')" title="Ausblenden">✕</button></div>
 <div id="layout">
   <aside id="side">
     <section>
@@ -232,6 +235,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <div id="facets"></div>
     </section>
     <div class="stat" id="stat"></div>
+    <div class="stat" id="storageInfo" style="border:none;padding-top:4px"></div>
     <div class="stat" id="detailProg" style="border:none;padding-top:4px"></div>
   </aside>
 
@@ -285,7 +289,35 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const pad = n => String(n).padStart(2,'0');
 const today = () => new Date().toISOString().slice(0,10);
 const defUser = () => ({rating:0, read:false, notes:'', lists:[], last_page:0});
-const ls = {get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v);}catch{return d;}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}};
+// localStorage nur für kleine UI-Einstellungen – alle Schlüssel mit Tool-Präfix, damit andere Tools auf derselben Domain unberührt bleiben
+const LS_PREFIX = 'nhfav-';
+const ls = {
+  get(k,d){ try { const v = localStorage.getItem(LS_PREFIX + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k,v){ try { localStorage.setItem(LS_PREFIX + k, JSON.stringify(v)); return true; } catch { return false; } },
+  del(k){ try { localStorage.removeItem(LS_PREFIX + k); } catch {} }
+};
+// Einmalige Übernahme alter Einstellungen ohne Präfix (v1). Die alten Schlüssel bleiben stehen,
+// weil allgemeine Namen wie "sort"/"status" auch einem anderen Tool gehören könnten.
+(function migrateLegacyPrefs(){
+  const valid = {
+    sort: v => ['fav','added','up_new','up_old','rating','pages_d','pages_a','title','id','random'].includes(v),
+    status: v => ['all','active','removed'].includes(v),
+    facetType: v => ['parody','character','tag','artist','group','language','category'].includes(v),
+    rmode: v => ['single','scroll'].includes(v),
+    rfitw: v => typeof v === 'boolean',
+    discreet: v => typeof v === 'boolean'
+  };
+  try {
+    if (localStorage.getItem(LS_PREFIX + 'prefs-migrated')) return;
+    for (const [k, ok] of Object.entries(valid)) {
+      if (localStorage.getItem(LS_PREFIX + k) !== null) continue;
+      const raw = localStorage.getItem(k); if (raw === null) continue;
+      let v; try { v = JSON.parse(raw); } catch { continue; }
+      if (ok(v)) ls.set(k, v);
+    }
+    localStorage.setItem(LS_PREFIX + 'prefs-migrated', '1');
+  } catch {}
+})();
 
 const S = {
   all: new Map(), meta: {lists:[]},
@@ -306,20 +338,49 @@ const DB = {
     r.onerror = () => rej(r.error);
   });},
   run(store, mode, fn){ return new Promise((res,rej) => {
-    const tx = this.db.transaction(store, mode); const out = fn(tx.objectStore(store));
+    let tx, out;
+    const fail = err => { err = err || new Error('Transaktion abgebrochen'); if (mode === 'readwrite') reportStorageError(err); rej(err); };
+    try { tx = this.db.transaction(store, mode); out = fn(tx.objectStore(Array.isArray(store) ? store[0] : store)); }
+    catch (e) { try { tx?.abort(); } catch {} return fail(e); }   // nichts Halbes speichern
     tx.oncomplete = () => res(out ? out.result : undefined);
-    tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+    tx.onabort = () => fail(tx.error);   // QuotaExceededError landet hier
   });},
   all(){ return this.run('g','readonly', s => s.getAll()); },
   put(list){ return this.run('g','readwrite', s => { list.forEach(x => s.put(x)); }); },
   del(ids){ return this.run('g','readwrite', s => { ids.forEach(id => s.delete(id)); }); },
   clear(){ return this.run('g','readwrite', s => { s.clear(); }); },
+  // Leeren + Schreiben in EINER Transaktion: schlägt etwas fehl, bleibt der alte Stand erhalten
+  replaceAll(list, meta){ return this.run(['g','meta'],'readwrite', s => {
+    const g = s.transaction.objectStore('g'), m = s.transaction.objectStore('meta');
+    g.clear(); list.forEach(x => g.put(x)); m.put(meta,'meta');
+  }); },
   getMeta(){ return this.run('meta','readonly', s => s.get('meta')); },
   setMeta(v){ return this.run('meta','readwrite', s => { s.put(v,'meta'); }); }
 };
+// Fehler sind bereits sichtbar gemeldet – ungefangene Promise-Fehler nicht zusätzlich in die Konsole werfen
+const quiet = p => p.catch(() => {});
 const saveTimers = new Map();
-function saveSoon(g){ clearTimeout(saveTimers.get(g.id)); saveTimers.set(g.id, setTimeout(() => { saveTimers.delete(g.id); DB.put([g]); }, 400)); }
-function saveMeta(){ DB.setMeta(S.meta); }
+function saveSoon(g){ clearTimeout(saveTimers.get(g.id)?.t); saveTimers.set(g.id, {g, t:setTimeout(() => { saveTimers.delete(g.id); quiet(DB.put([g])); }, 400)}); }
+function flushSaves(){ if (!saveTimers.size || !DB.db) return; const list = [...saveTimers.values()].map(x => (clearTimeout(x.t), x.g)); saveTimers.clear(); quiet(DB.put(list)); }
+function saveMeta(){ return quiet(DB.setMeta(S.meta)); }
+
+/* ---------- Speicherfehler sichtbar machen ---------- */
+function reportStorageError(err){
+  const full = err && (err.name === 'QuotaExceededError' || /quota/i.test(err.message||''));
+  const bar = document.getElementById('errbar'); if (!bar) return;
+  bar.querySelector('span').innerHTML = full
+    ? '⚠️ <b>Speicher voll – die letzte Änderung wurde NICHT gespeichert.</b> Mach jetzt ein Backup (Menü ⋯) und gib Speicher frei (z. B. in anderen Tools auf dieser Domain).'
+    : `⚠️ <b>Speichern fehlgeschlagen</b> (${esc(err?.name || err?.message || 'unbekannter Fehler')}). Die letzte Änderung ist evtl. nicht gesichert – bitte ein Backup machen.`;
+  bar.classList.remove('hidden');
+}
+async function renderStorageInfo(){
+  const el = document.getElementById('storageInfo'); if (!el || !navigator.storage?.estimate) return;
+  try {
+    const [est, persisted] = await Promise.all([navigator.storage.estimate(), navigator.storage.persisted?.() ?? false]);
+    const mb = b => (b / 1048576).toFixed(b < 1048576 * 10 ? 1 : 0);
+    el.innerHTML = `Speicher der Domain: ${mb(est.usage||0)} MB von ${mb(est.quota||0)} MB<br>${persisted ? '🔒 dauerhaft geschützt' : '⚠️ nicht dauerhaft – Browser darf bei Platzmangel löschen'}`;
+  } catch {}
+}
 
 /* ---------- nhentai API v2 ---------- */
 const API_BASE = 'https://nhentai.net/api/v2';
@@ -327,8 +388,8 @@ const GAP = {fav:4200, tags:4200, gal:1450, misc:1500};   // Rate-Limits: 15/min
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const Api = {
   bridge: false, waiters: new Map(), seq: 0, last: {}, onWait: null,
-  key(){ return ls.get('nhfav-apikey', ''); },
-  setKey(k){ if (k) ls.set('nhfav-apikey', k); else { try { localStorage.removeItem('nhfav-apikey'); } catch {} } },
+  key(){ return ls.get('apikey', ''); },
+  setKey(k){ if (!k) return ls.del('apikey'); if (!ls.set('apikey', k)) toast('⚠️ API-Key konnte nicht gespeichert werden – localStorage dieser Domain ist voll.', 7000); },
   init(){
     addEventListener('message', e => {
       const d = e.data; if (!d || typeof d !== 'object' || e.origin !== location.origin) return;
@@ -533,6 +594,7 @@ function renderLists(){
 function renderStat(){
   let a = 0, r = 0, read = 0;
   for (const g of S.all.values()) { if (g.status === 'active') a++; else r++; if (g.user.read) read++; }
+  renderStorageInfo();
   $('#stat').innerHTML = `${a} Favoriten · ${r} entfernt · ${read} gelesen<br>Letztes Update: ${S.meta.lastImport ? new Date(S.meta.lastImport).toLocaleString('de-DE') : '–'}`;
 }
 function rebuildDatalist(){
@@ -602,10 +664,10 @@ function onModalClick(e){
       document.querySelectorAll('#modalBody [data-star]').forEach(s => s.classList.toggle('on', +s.dataset.star <= g.user.rating));
       saveSoon(g); replaceCard(g); return;
     }
-    if (t.closest('[data-reactivate]')) { g.status = 'active'; delete g.removed_at; DB.put([g]); render(); return openDetail(g.id); }
+    if (t.closest('[data-reactivate]')) { g.status = 'active'; delete g.removed_at; quiet(DB.put([g])); render(); return openDetail(g.id); }
     if (t.closest('[data-delete]')) {
       if (!confirm('Diesen Eintrag endgültig aus dem Archiv löschen? (Bewertung, Notizen und Listen gehen verloren)')) return;
-      DB.del([g.id]); S.all.delete(g.id); closeModal(); render(); toast('Gelöscht'); return;
+      quiet(DB.del([g.id])); S.all.delete(g.id); closeModal(); render(); toast('Gelöscht'); return;
     }
   }
   if (S.modal === 'review') onReviewClick(e);
@@ -630,7 +692,7 @@ function onModalKey(e){
     const g = S.all.get(S.detailId);
     if (!S.meta.lists.includes(name)) { S.meta.lists.push(name); saveMeta(); }
     if (!g.user.lists.includes(name)) g.user.lists.push(name);
-    hayCache.delete(g); DB.put([g]); renderLists(); openDetail(g.id);
+    hayCache.delete(g); quiet(DB.put([g])); renderLists(); openDetail(g.id);
   }
 }
 
@@ -696,7 +758,7 @@ function closeReader(){
   R.io?.disconnect(); R.io2?.disconnect();
   $('#reader').classList.add('hidden'); $('#rstage').innerHTML = '';
   if (!S.modal) document.body.style.overflow = '';
-  if (R.g) { DB.put([R.g]); replaceCard(R.g); renderStat(); if (S.modal === 'detail' && S.detailId === R.g.id) openDetail(R.g.id); }
+  if (R.g) { quiet(DB.put([R.g])); replaceCard(R.g); renderStat(); if (S.modal === 'detail' && S.detailId === R.g.id) openDetail(R.g.id); }
   R.g = null;
 }
 
@@ -1049,7 +1111,7 @@ function applyDetail(g, d){
 }
 async function fetchDetail(g){
   const d = await Api.get('/galleries/' + g.id, 'gal', GAP.gal);
-  applyDetail(g, d); await DB.put([g]); replaceCard(g); return g;
+  applyDetail(g, d); await quiet(DB.put([g])); replaceCard(g); return g;
 }
 function queueDetails(ids){
   for (const id of ids) if (!Detail.queue.includes(id)) Detail.queue.push(id);
@@ -1077,8 +1139,10 @@ async function restoreBackup(d){
   if (!Array.isArray(d.galleries)) return toast('Backup ungültig');
   if (!confirm(`Backup vom ${new Date(d.exported_at).toLocaleString('de-DE')} mit ${d.galleries.length} Einträgen einspielen?\n\nDas ERSETZT dein aktuelles Archiv (${S.all.size} Einträge).`)) return;
   const list = d.galleries.filter(g => g && g.id).map(g => ({...g, id:String(g.id), tags:normTags(g.tags), user:{...defUser(), ...(g.user||{})}, status:g.status||'active'}));
-  await DB.clear(); await DB.put(list);
-  S.meta = {lists:[], ...(d.meta||{})}; await DB.setMeta(S.meta);
+  const meta = {lists:[], ...(d.meta||{})};
+  try { await DB.replaceAll(list, meta); }
+  catch { toast('Backup NICHT eingespielt – dein bisheriges Archiv ist unverändert.', 6000); return; }
+  S.meta = meta;
   S.all = new Map(list.map(g => [g.id, g]));
   rebuildDatalist(); render(); toast(`✓ Backup eingespielt (${list.length} Einträge)`);
 }
@@ -1149,7 +1213,8 @@ function bind(){
     if (a === 'wipe') {
       if (!confirm('Wirklich das GESAMTE Archiv löschen – inkl. Bewertungen, Notizen und Listen?')) return;
       if (!confirm('Letzte Warnung. Vorher ein Backup gemacht?')) return;
-      await DB.clear(); S.all.clear(); S.meta = {lists:[]}; saveMeta(); rebuildDatalist(); render(); toast('Archiv gelöscht');
+      try { await DB.clear(); } catch { return; }
+      S.all.clear(); S.meta = {lists:[]}; saveMeta(); rebuildDatalist(); render(); toast('Archiv gelöscht');
     }
   };
 
@@ -1194,7 +1259,7 @@ function bind(){
       if (!confirm(`Liste „${l}“ löschen? (Die Einträge selbst bleiben erhalten)`)) return;
       S.meta.lists = S.meta.lists.filter(x => x !== l); saveMeta();
       const ch = []; for (const g of S.all.values()) if (g.user.lists.includes(l)) { g.user.lists = g.user.lists.filter(x => x !== l); hayCache.delete(g); ch.push(g); }
-      DB.put(ch); if (S.f.list === l) S.f.list = null; return render();
+      quiet(DB.put(ch)); if (S.f.list === l) S.f.list = null; return render();
     }
     if ((el = e.target.closest('[data-list]'))) { S.f.list = S.f.list === el.dataset.list ? null : el.dataset.list; render(); }
   };
@@ -1256,10 +1321,13 @@ function bind(){
   Api.init();
   try { await DB.open(); }
   catch (e) { $('#empty').classList.remove('hidden'); $('#empty').innerHTML = '<h2>Speicher nicht verfügbar</h2><p>Dein Browser blockiert IndexedDB (z. B. im privaten Modus). Bitte in einem normalen Fenster öffnen.</p>'; return; }
-  try { navigator.storage?.persist?.(); } catch {}
+  try { await navigator.storage?.persist?.(); } catch {}
   const m = await DB.getMeta(); if (m) S.meta = {lists:[], ...m};
   for (const g of await DB.all()) { g.user = {...defUser(), ...(g.user||{})}; g.tags = normTags(g.tags); S.all.set(g.id, g); }
-  rebuildDatalist(); render();
+  rebuildDatalist(); render(); renderStorageInfo();
+  // Offene Änderungen sofort sichern, wenn der Tab geschlossen oder in den Hintergrund gelegt wird
+  addEventListener('pagehide', flushSaves);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
 })();
 </script>
 </body>
