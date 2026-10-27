@@ -848,19 +848,35 @@ function relItem(id, extra=''){
 }
 function fillThumbs(root){ root.querySelectorAll('img[data-gid]').forEach(img => { const g = S.all.get(img.dataset.gid); img.loading = 'lazy'; if (g) loadImg(img, 'cover', g); }); }
 
+// Ist eine Reihe schon in einer eigenen Liste erfasst? → beste Liste + wie viele Teile drin sind
+function listCoverage(gr){
+  let best = null, n = 0;
+  for (const l of S.meta.lists) {
+    const c = gr.ids.reduce((k, id) => k + (S.all.get(id)?.user.lists.includes(l) ? 1 : 0), 0);
+    if (c > n) { n = c; best = l; }
+  }
+  return {list: best, n, done: !!best && n === gr.ids.length};
+}
 function showRelations(tab){
   const A = Rel.analyze(); S.relTab = tab || S.relTab || (A.dups.length ? 'dups' : 'series');
-  const LIMIT = 150, isD = S.relTab === 'dups', list = isD ? A.dups : A.series;
+  const cov = new Map(A.series.map(gr => [gr.sig, listCoverage(gr)]));
+  const doneN = A.series.filter(gr => cov.get(gr.sig).done).length;
+  const openSeries = A.series.filter(gr => S.relShowDone || !cov.get(gr.sig).done)
+    .sort((a, b) => (cov.get(a.sig).done - cov.get(b.sig).done) || (cov.get(b.sig).n > 0) - (cov.get(a.sig).n > 0));
+  const LIMIT = 150, isD = S.relTab === 'dups', list = isD ? A.dups : openSeries;
   const head = `<button class="close icon" data-x>✕</button><h2>🔗 Reihen &amp; Duplikate</h2>
-    <div class="seg" style="max-width:460px;margin-bottom:14px"><button data-reltab="dups" class="${isD ? 'on' : ''}">⧉ Mögliche Duplikate (${A.dups.length})</button><button data-reltab="series" class="${!isD ? 'on' : ''}">📚 Reihen (${A.series.length})</button></div>
+    <div class="seg" style="max-width:460px;margin-bottom:14px"><button data-reltab="dups" class="${isD ? 'on' : ''}">⧉ Mögliche Duplikate (${A.dups.length})</button><button data-reltab="series" class="${!isD ? 'on' : ''}">📚 Reihen (${A.series.length - doneN})</button></div>
     <p class="muted" style="font-size:13px;margin-top:-4px">${isD
       ? 'Gleicher oder fast gleicher Titel beim selben Künstler. „Andere Sprache“ ist meist eine Übersetzung desselben Werks, „gleiche Sprache“ eher ein Re-Upload.'
-      : 'Einträge mit gleichem Titel und unterschiedlicher Teil-Nummer (2, Vol. 3, Zenpen/Kouhen …) beim selben Künstler. Fehlende Teile sind markiert.'} Klick auf einen Eintrag öffnet ihn.</p>`;
+      : 'Einträge mit gleichem Titel und unterschiedlicher Teil-Nummer (2, Vol. 3, Zenpen/Kouhen …) beim selben Künstler. Fehlende Teile sind markiert. Reihen, die schon komplett in einer deiner Listen stehen, sind ausgeblendet.'} Klick auf einen Eintrag öffnet ihn.</p>
+    ${!isD && doneN ? `<label class="check" style="margin:-4px 0 12px"><input type="checkbox" data-reldone ${S.relShowDone ? 'checked' : ''}> ${doneN} bereits in Listen erfasste Reihe(n) anzeigen</label>` : ''}`;
   const body = list.length ? list.slice(0, LIMIT).map(gr => isD
     ? `<div class="rvsec"><div class="rvhead"><b>${gr.kind === 'same' ? '⧉ Gleiche Sprache – evtl. doppelt' : '🌐 Andere Sprache / Version'} (${gr.ids.length})</b><button data-relign="${esc(gr.sig)}">Kein Duplikat</button></div>
        <div class="rvlist">${gr.ids.map(id => relItem(id)).join('')}</div></div>`
-    : `<div class="rvsec"><div class="rvhead"><b>📚 ${esc(gr.name)} (${gr.ids.length})</b>${gr.missing.length ? `<span class="pill warn" title="In deinen Favoriten nicht gefunden">fehlt: Teil ${gr.missing.join(', ')}</span>` : ''}
-         <button data-rellist="${esc(gr.sig)}">Als Liste anlegen</button><button data-relign="${esc(gr.sig)}">Keine Reihe</button></div>
+    : (c => `<div class="rvsec" ${c.done ? 'style="opacity:.6"' : ''}><div class="rvhead"><b>📚 ${esc(gr.name)} (${gr.ids.length})</b>${gr.missing.length ? `<span class="pill warn" title="In deinen Favoriten nicht gefunden">fehlt: Teil ${gr.missing.join(', ')}</span>` : ''}
+         ${c.done ? `<span class="pill ok">✓ in Liste „${esc(c.list)}“</span>`
+           : c.n ? `<span class="pill warn">Liste „${esc(c.list)}“ enthält ${c.n} von ${gr.ids.length}</span><button data-rellist="${esc(gr.sig)}" data-target="${esc(c.list)}">Rest zu „${esc(c.list)}“ hinzufügen</button>`
+           : `<button data-rellist="${esc(gr.sig)}">Als Liste anlegen</button>`}<button data-relign="${esc(gr.sig)}">Keine Reihe</button></div>`)(cov.get(gr.sig)) + `
        <div class="rvlist">${gr.parts.map(p => relItem(p.id, partPill(p.num))).join('')}</div></div>`).join('')
     + (list.length > LIMIT ? `<div class="more">… und ${list.length - LIMIT} weitere Gruppen.</div>` : '')
     : `<p>${isD ? 'Keine möglichen Duplikate gefunden. 🎉' : 'Keine Reihen gefunden.'}</p>`;
@@ -872,6 +888,7 @@ function showRelations(tab){
 function onRelClick(e){
   let el;
   if ((el = e.target.closest('[data-reltab]'))) return showRelations(el.dataset.reltab);
+  if ((el = e.target.closest('[data-reldone]'))) { S.relShowDone = el.checked; return showRelations(); }
   if ((el = e.target.closest('[data-relign]'))) {
     S.meta.relIgnore = [...new Set([...(S.meta.relIgnore||[]), el.dataset.relign])]; saveMeta(); Rel.invalidate();
     const y = $('#modal').scrollTop; showRelations(); $('#modal').scrollTop = y; return;
@@ -879,11 +896,13 @@ function onRelClick(e){
   if (e.target.closest('[data-relreset]')) { S.meta.relIgnore = []; saveMeta(); Rel.invalidate(); return showRelations(); }
   if ((el = e.target.closest('[data-rellist]'))) {
     const gr = Rel.analyze().series.find(x => x.sig === el.dataset.rellist); if (!gr) return;
-    let name = prompt('Name der Liste:', gr.name); if (!name || !(name = name.trim())) return;
+    let name = el.dataset.target || prompt('Name der Liste:', gr.name); if (!name || !(name = name.trim())) return;
     if (!S.meta.lists.includes(name)) S.meta.lists.push(name);
     const ch = [];
     for (const id of gr.ids) { const g = S.all.get(id); if (g && !g.user.lists.includes(name)) { g.user.lists.push(name); hayCache.delete(g); ch.push(g); } }
-    saveMeta(); quiet(DB.put(ch)); renderLists(); toast(`✓ Liste „${name}“ mit ${gr.ids.length} Einträgen angelegt`); return;
+    saveMeta(); quiet(DB.put(ch)); renderLists();
+    toast(el.dataset.target ? `✓ ${ch.length} Einträge zu „${name}“ hinzugefügt` : `✓ Liste „${name}“ mit ${gr.ids.length} Einträgen angelegt`);
+    const y = $('#modal').scrollTop; showRelations(); $('#modal').scrollTop = y; return;
   }
   if ((el = e.target.closest('[data-gopen]'))) { S.relBack = true; return openDetail(el.dataset.gopen); }
 }
@@ -891,7 +910,7 @@ function onRelClick(e){
 function relBlock(g){
   const A = Rel.analyze(), d = A.dupOf.get(g.id), s = A.seriesOf.get(g.id), out = [];
   if (d && !A.ign.has(d.sig)) out.push(`<div><div class="lbl">⧉ ${d.kind === 'same' ? 'Mögliche Duplikate' : 'Andere Versionen / Sprachen'}</div>${d.ids.filter(id => id !== g.id).map(id => relItem(id)).join('')}</div>`);
-  if (s && !A.ign.has(s.sig)) out.push(`<div><div class="lbl">📚 Reihe „${esc(s.name)}“ – ${s.ids.length} Teile${s.missing.length ? ` · <span style="color:var(--warn)">fehlt: Teil ${s.missing.join(', ')}</span>` : ''}</div>${s.parts.map(p => p.id === g.id
+  if (s && !A.ign.has(s.sig)) out.push(`<div><div class="lbl">📚 Reihe „${esc(s.name)}“ – ${s.ids.length} Teile${(c => c.done ? ` · <span style="color:var(--ok)">✓ in Liste „${esc(c.list)}“</span>` : c.n ? ` · Liste „${esc(c.list)}“ enthält ${c.n} von ${s.ids.length}` : '')(listCoverage(s))}${s.missing.length ? ` · <span style="color:var(--warn)">fehlt: Teil ${s.missing.join(', ')}</span>` : ''}</div>${s.parts.map(p => p.id === g.id
       ? `<div class="rv" style="grid-template-columns:1fr;cursor:default;opacity:.6"><small>▶ ${p.num !== null ? 'Teil ' + (p.num >= 90 ? 'Ende' : p.num) + ' – ' : ''}dieser Eintrag</small></div>`
       : relItem(p.id, partPill(p.num))).join('')}</div>`);
   return out.length ? `<div class="personal relbox">${out.join('')}</div>` : '';
