@@ -836,8 +836,10 @@ function itemRange(it){
 }
 function chLabel(it){
   if (it.ch) return it.ch;
-  const g = it.id && S.all.get(it.id), r = g && Rel.rangeOf(g);
-  return r ? `${r[0]}–${r[1]}` : '';
+  const g = it.id && S.all.get(it.id); if (!g) return '';
+  const r = Rel.rangeOf(g); if (r) return `${r[0]}–${r[1]}`;
+  const n = Rel.numOf(g);   // einzelne Nummer aus dem Titel (z. B. "Ch. 3"); "Ende"-Marker (≥90) nicht anzeigen
+  return n !== null && n < 90 ? String(n) : '';
 }
 const itemNum = it => itemRange(it)?.[0] ?? null;
 function sortByNumber(items){
