@@ -100,6 +100,8 @@ main{padding:14px 16px 60px;min-width:0}
 #bulk b{margin-right:4px}
 #bulk button,#bulk select{padding:5px 10px;font-size:13px}
 .facet .ren{opacity:0;color:var(--muted);padding:0 4px}
+.chin{width:74px;padding:3px 7px;font-size:12.5px}
+aside h3 select{max-width:90px}
 .facet:hover .ren{opacity:1}
 .cover{position:relative;aspect-ratio:7/10;border-radius:var(--r);overflow:hidden;background:var(--panel2)}
 .cover img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s,filter .25s}
@@ -273,7 +275,8 @@ textarea{width:100%;min-height:70px;resize:vertical}
       </div>
     </section>
     <section>
-      <h3>Eigene Listen</h3>
+      <h3><span>Eigene Listen</span><span style="display:flex;gap:4px"><button id="listLang" class="hidden" title="Listennamen: Englisch ↔ Japanisch" style="font-size:11px;padding:2px 7px"></button>
+        <select id="listSort" title="Listen sortieren"><option value="name">Name</option><option value="count">Anzahl</option><option value="created">Erstellt</option></select></span></h3>
       <div id="lists"></div>
       <input id="newList" placeholder="+ neue Liste" style="width:100%;margin-top:6px">
     </section>
@@ -643,7 +646,7 @@ function download(name, content, type){
 const hayCache = new WeakMap();
 function hay(g){
   let h = hayCache.get(g);
-  if (!h) { h = [g.id, g.title_english, g.title_japanese, g.title_pretty, ...TAG_TYPES.flatMap(t => g.tags[t]||[]), g.user.notes, ...(g.user.lists||[])].join('\n').toLowerCase(); hayCache.set(g, h); }
+  if (!h) { h = [g.id, g.title_english, g.title_japanese, g.title_pretty, ...TAG_TYPES.flatMap(t => g.tags[t]||[]), g.user.notes, ...(g.user.lists||[]), ...(g.user.lists||[]).map(l => S.meta.listInfo?.[l]?.ja || '')].join('\n').toLowerCase(); hayCache.set(g, h); }
   return h;
 }
 function parseQ(q){
@@ -698,7 +701,7 @@ function card(g){
   const lang = langCode(g), r = g.user.rating||0;
   if (g.user.mark) d.classList.add('marked');
   d.innerHTML = `<div class="cover"><button class="cmark ${g.user.mark ? 'on' : ''}" data-cmark title="Markieren · Shift+Klick: ganzen Bereich markieren">🏷</button><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
-    <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.user.mark?'<span class="b mk">🏷</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}</div></div>
+    <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.user.mark?'<span class="b mk">🏷</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}${S.chMap?.get(g.id) ? `<span class="b">Ch. ${esc(S.chMap.get(g.id))}</span>` : ''}</div></div>
     <div class="t">${esc(dispTitle(g))}</div><div class="s">${esc((g.tags.artist||[]).join(', ') || (g.tags.group||[]).join(', ') || (g.tags.parody||[]).join(', ') || '–')}</div>`;
   const img = d.querySelector('img'); img.loading = 'lazy'; loadImg(img, 'cover', g);
   return d;
@@ -725,7 +728,7 @@ function renderBar(){
   const total = [...S.all.values()].filter(g => S.f.status === 'all' || g.status === S.f.status).length;
   $('#count').textContent = S.view.length === total ? `${total} Einträge` : `${S.view.length} von ${total}`;
   const chips = S.f.chips.map((c,i) => `<span class="chip ${c.mode}" data-chip="${i}" title="Klick: einschließen ↔ ausschließen"><span class="t">${esc(TYPE_KEY[c.type])}</span><span class="nm">${esc(c.name)}</span><span class="x" data-chipx="${i}">✕</span></span>`);
-  if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(S.f.list)}<span class="x">✕</span></span><button class="linkbtn" data-ordlist="${esc(S.f.list)}">⇅ Liste ordnen</button>`);
+  if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(listLabel(S.f.list))}<span class="x">✕</span></span><button class="linkbtn" data-ordlist="${esc(S.f.list)}">⇅ Liste ordnen</button>`);
   const any = chips.length || S.f.q || S.f.unread || S.f.marked || S.f.minRating;
   $('#chips').innerHTML = chips.join('') + (any ? `<button class="linkbtn" id="resetF">Filter zurücksetzen</button>` : '');
 }
@@ -741,8 +744,11 @@ function renderFacets(){
 function renderLists(){
   const cnt = new Map();
   for (const g of S.all.values()) for (const l of (g.user.lists||[])) cnt.set(l, (cnt.get(l)||0) + 1);
-  $('#lists').innerHTML = S.meta.lists.length ? S.meta.lists.map(l =>
-    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}"><span>${esc(l)}</span><span><span class="n">${cnt.get(l)||0}</span><span class="ren" data-ordlist="${esc(l)}" title="Reihenfolge &amp; Platzhalter">⇅</span><span class="ren" data-renlist="${esc(l)}" title="Liste umbenennen">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
+  const anyJa = S.meta.lists.some(l => S.meta.listInfo?.[l]?.ja), lb = $('#listLang');
+  lb.classList.toggle('hidden', !anyJa); lb.textContent = ls.get('listLang', 'en') === 'ja' ? 'JP' : 'EN';
+  $('#listSort').value = ls.get('listSort', 'name');
+  $('#lists').innerHTML = S.meta.lists.length ? sortedLists(cnt).map(l =>
+    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}" title="${esc(listAlt(l))}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(listLabel(l))}</span><span style="white-space:nowrap"><span class="n">${cnt.get(l)||0}</span><span class="ren" data-ordlist="${esc(l)}" title="Reihenfolge &amp; Platzhalter">⇅</span><span class="ren" data-renlist="${esc(l)}" title="Namen bearbeiten (EN/JP)">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
     : '<div class="muted" style="font-size:13px">Noch keine Listen. Im Detailfenster kannst du Einträge zu Listen hinzufügen.</div>';
 }
 function renderStat(){
@@ -761,6 +767,39 @@ function rebuildDatalist(){
   $('#tagList').innerHTML = [...keys].sort().map(k => `<option value="${esc(k)}">`).join('');
 }
 
+/* ---------- Eigene Listen: Namen (EN/JP) & Sortierung ---------- */
+// Schlüssel einer Liste = Hauptname (englisch). Japanischer Name optional in S.meta.listInfo[schlüssel].ja
+const hasJa = s => /[぀-ヿ㐀-鿿ｦ-ﾟ]/.test(s || '');
+function listLabel(l){ const ja = S.meta.listInfo?.[l]?.ja; return ls.get('listLang', 'en') === 'ja' && ja ? ja : l; }
+function listAlt(l){ const ja = S.meta.listInfo?.[l]?.ja; if (!ja) return ''; return ls.get('listLang', 'en') === 'ja' ? l : ja; }
+function setListJa(l, ja){
+  S.meta.listInfo = S.meta.listInfo || {};
+  if (ja) S.meta.listInfo[l] = {...(S.meta.listInfo[l] || {}), ja}; else if (S.meta.listInfo[l]) delete S.meta.listInfo[l].ja;
+  for (const g of S.all.values()) if (g.user.lists.includes(l)) hayCache.delete(g);
+}
+function sortedLists(cnt){
+  const mode = ls.get('listSort', 'name'), arr = [...S.meta.lists];
+  if (mode === 'name') arr.sort((a, b) => listLabel(a).localeCompare(listLabel(b), 'de', {sensitivity:'base', numeric:true}));
+  if (mode === 'count') arr.sort((a, b) => (cnt.get(b)||0) - (cnt.get(a)||0) || listLabel(a).localeCompare(listLabel(b), 'de', {sensitivity:'base'}));
+  return arr;
+}
+function showListNameDialog(l){
+  S.nameList = l;
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>✎ Liste bearbeiten</h2>
+    <label class="lbl" for="lnEn">Name (Englisch / Hauptname)</label><input id="lnEn" value="${esc(l)}" style="width:100%;margin-bottom:12px">
+    <label class="lbl" for="lnJa">Name (Japanisch, optional)</label><input id="lnJa" value="${esc(S.meta.listInfo?.[l]?.ja || '')}" placeholder="z. B. 先輩とのひみつ" style="width:100%">
+    <p class="muted" style="font-size:12.5px">Über den Knopf „EN/JP“ in der Seitenleiste schaltest du um, welcher Name angezeigt wird. Gesucht wird in beiden.</p>
+    <div class="row foot"><button data-x>Abbrechen</button><button class="primary" data-lnsave>Speichern</button></div>`;
+  showModal('listname'); setTimeout(() => $('#lnEn')?.select(), 30);
+}
+function saveListName(){
+  const old = S.nameList, en = $('#lnEn').value.trim(), ja = $('#lnJa').value.trim();
+  if (!en) return toast('Der Hauptname darf nicht leer sein.');
+  let key = old;
+  if (en !== old) { if (!renameList(old, en)) return; key = en; }
+  setListJa(key, ja); saveMeta(); closeModal(); render();
+}
+
 /* ---------- Eigene Listen: Reihenfolge & Platzhalter ---------- */
 // S.meta.listOrder[name] = [ 'galerie-id' | {ph:'Ch. 3', k:'zufallsschlüssel'} ]
 // Mitgliedschaft steht weiter in g.user.lists – die Reihenfolge ergänzt nur, was dort steht.
@@ -770,6 +809,7 @@ function orderedList(name){
   const ids = new Set(members.map(g => g.id)), stored = (S.meta.listOrder||{})[name] || [], seen = new Set(), out = [];
   for (const it of stored) {
     if (typeof it === 'string') { if (ids.has(it) && !seen.has(it)) { seen.add(it); out.push({id:it}); } }
+    else if (it && it.id) { if (ids.has(it.id) && !seen.has(it.id)) { seen.add(it.id); out.push({id:it.id, ch:it.ch || ''}); } }
     else if (it && it.ph) out.push({ph:it.ph, k:it.k || phKey()});
   }
   const rest = members.filter(g => !seen.has(g.id))
@@ -779,18 +819,36 @@ function orderedList(name){
 }
 function saveOrder(name, items){
   S.meta.listOrder = S.meta.listOrder || {};
-  S.meta.listOrder[name] = items.map(it => it.id || {ph:it.ph, k:it.k});
+  S.meta.listOrder[name] = items.map(it => it.id ? (it.ch ? {id:it.id, ch:it.ch} : it.id) : {ph:it.ph, k:it.k});
   saveMeta();
 }
-const itemNum = it => it.id ? Rel.numOf(S.all.get(it.id)) : ((String(it.ph).match(/\d+/)||[])[0] ? +String(it.ph).match(/\d+/)[0] : null);
+// Kapitelbereich eines Listeneintrags: eigene Angabe ("1-3", "4, 5") > Bereich im Titel ("Ch. 1-3") > erkannte Nummer
+function parseCh(str){
+  const n = String(str || '').match(/\d+(?:\.\d+)?/g); if (!n) return null;
+  const v = n.map(Number); return [Math.min(...v), Math.max(...v)];
+}
+function itemRange(it){
+  if (it.ph) return parseCh(it.ph);
+  if (it.ch) return parseCh(it.ch);
+  const g = S.all.get(it.id); if (!g) return null;
+  const r = Rel.rangeOf(g); if (r) return r;
+  const n = Rel.numOf(g); return n === null ? null : [n, n];
+}
+function chLabel(it){
+  if (it.ch) return it.ch;
+  const g = it.id && S.all.get(it.id), r = g && Rel.rangeOf(g);
+  return r ? `${r[0]}–${r[1]}` : '';
+}
+const itemNum = it => itemRange(it)?.[0] ?? null;
 function sortByNumber(items){
   return items.map((it, i) => ({it, i, n:itemNum(it)})).sort((a, b) => (a.n ?? 1e3) - (b.n ?? 1e3) || a.i - b.i).map(x => x.it);
 }
 function fillGaps(items){
-  const nums = new Set(items.map(itemNum).filter(n => n !== null && n < 90));
+  const nums = new Set();
+  for (const it of items) { const r = itemRange(it); if (r && r[0] < 90) for (let n = Math.ceil(r[0]); n <= Math.floor(Math.min(r[1], 89)); n++) nums.add(n); }
   if (!nums.size) return items;
   const max = Math.max(...nums), add = [];
-  for (let n = 1; n < max; n++) if (!nums.has(n)) add.push({ph:'Teil ' + n, k:phKey()});
+  for (let n = 1; n < max; n++) if (!nums.has(n)) add.push({ph:'Ch. ' + n, k:phKey()});
   return sortByNumber([...items, ...add]);
 }
 
@@ -802,17 +860,19 @@ function renderListEditor(){
   const name = S.editList, items = S.editItems;
   const rows = items.map((it, i) => {
     const g = it.id && S.all.get(it.id);
+    const auto = g && !it.ch ? (chLabel({id:it.id}) || (Rel.numOf(g) ?? '')) : '';
     const label = g ? `<b>${esc(dispTitle(g))}</b><small>#${esc(g.id)} · ${esc(Rel.lang(g))} · ${g.pages||'?'} S.${g.status === 'removed' ? ' · entfernt' : ''}</small>`
                     : `<b style="color:var(--muted)">⬚ ${esc(it.ph)}</b><small>Platzhalter – fehlt in deinen Favoriten</small>`;
     return `<div class="lrow ${g ? '' : 'isph'}" draggable="true" data-i="${i}">
       <span class="grip" title="Ziehen zum Verschieben">⠿</span><span class="pos">${i + 1}</span>
       <span class="thumb">${g ? `<img alt="" data-gid="${esc(g.id)}">` : ''}</span>
       <span class="lt" ${g ? `data-lopen="${esc(g.id)}"` : `data-lren="${i}"`} title="${g ? 'Öffnen' : 'Klicken zum Umbenennen'}">${label}</span>
-      <span class="lbtns"><button data-lup="${i}" ${i ? '' : 'disabled'} title="Nach oben">↑</button><button data-ldown="${i}" ${i < items.length - 1 ? '' : 'disabled'} title="Nach unten">↓</button>
+      <span class="lbtns">${g ? `<input class="chin" data-lch="${i}" value="${esc(it.ch || '')}" placeholder="${auto !== '' ? 'Ch. ' + esc(auto) : 'Ch.'}" title="Welche Kapitel umfasst dieser Eintrag? z. B. 1-3 oder 4, 5 (leer = automatisch aus dem Titel)">` : ''}<button data-lup="${i}" ${i ? '' : 'disabled'} title="Nach oben">↑</button><button data-ldown="${i}" ${i < items.length - 1 ? '' : 'disabled'} title="Nach unten">↓</button>
       <button data-lph="${i}" title="Platzhalter davor einfügen">+⬚</button><button data-ldel="${i}" title="${g ? 'Aus der Liste entfernen' : 'Platzhalter löschen'}">✕</button></span></div>`;
   }).join('');
-  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>📋 Liste „${esc(name)}“ ordnen</h2>
-    <p class="muted" style="font-size:13px;margin-top:-6px">Ziehen oder ↑↓ zum Verschieben. Platzhalter (⬚) markieren fehlende Kapitel – z. B. „Ch. 3“. Änderungen werden sofort gespeichert.</p>
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>📋 Liste „${esc(listLabel(name))}“ ordnen <button class="linkbtn" data-renlist="${esc(name)}" style="font-size:13px;font-weight:400">✎ Namen</button></h2>
+    ${listAlt(name) ? `<div class="jp">${esc(listAlt(name))}</div>` : ''}
+    <p class="muted" style="font-size:13px;margin-top:-6px">Ziehen oder ↑↓ zum Verschieben. Platzhalter (⬚) markieren fehlende Kapitel – z. B. „Ch. 3“. Im Feld „Ch.“ trägst du ein, welche Kapitel ein Eintrag umfasst (z. B. „1-3“) – das berücksichtigen auch Sortieren und Lücken-Füllen. Änderungen werden sofort gespeichert.</p>
     <div class="row" style="margin-bottom:12px"><button data-lsort>🔢 Nach Teil-Nummer sortieren</button><button data-lgaps>⬚ Lücken mit Platzhaltern füllen</button><button data-lphend>+ Platzhalter am Ende</button>
       <button data-lfilter style="margin-left:auto">In der Übersicht anzeigen</button></div>
     <div class="ledit">${rows || '<p class="muted">Diese Liste ist leer.</p>'}</div>`;
@@ -859,6 +919,7 @@ function bindListDrag(){
 function listPlaceholders(){
   S.phBefore = new Map(); S.phAfter = [];
   const f = S.f;
+  S.chMap = new Map(); if (f.list) for (const it of orderedList(f.list)) if (it.id) { const c = chLabel(it); if (c) S.chMap.set(it.id, c); }
   if (!f.list || S.sort !== 'fav' || f.q || f.chips.length || f.unread || f.marked || f.minRating || f.status !== 'all') return;
   let pending = [], idx = 0; const pos = new Map(S.view.map((g, i) => [g.id, i]));
   for (const it of orderedList(f.list)) {
@@ -893,7 +954,7 @@ function renderBulk(mk, removedN){
   if (!mk) return;
   $('#bulkCount').textContent = `🏷 ${mk} markiert`;
   $('[data-bulk="markview"]').textContent = `Alle ${S.view.length} angezeigten markieren`;
-  $('[data-bulk="tolist"]').innerHTML = `<option value="">➕ Zu Liste hinzufügen …</option>${S.meta.lists.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('')}<option value="__nhfav_new__">+ Neue Liste …</option>`;
+  $('[data-bulk="tolist"]').innerHTML = `<option value="">➕ Zu Liste hinzufügen …</option>${sortedLists(new Map()).map(l => `<option value="${esc(l)}">${esc(listLabel(l))}</option>`).join('')}<option value="__nhfav_new__">+ Neue Liste …</option>`;
   const fl = $('[data-bulk="fromlist"]'); fl.classList.toggle('hidden', !S.f.list); if (S.f.list) fl.textContent = `➖ Aus „${S.f.list}“ entfernen`;
   $('[data-bulk="showmarked"]').textContent = S.f.marked ? 'Alle zeigen' : 'Nur markierte zeigen';
 }
@@ -947,11 +1008,12 @@ function deleteRemoved(){
   if (!confirm(`Alle ${gs.length} Einträge löschen, die nicht mehr in deinen nhentai-Favoriten sind?${withData ? `\n\n${withData} davon haben Bewertung, Notizen oder Listen – das geht verloren.` : ''}\n\nTipp: Vorher ein Backup machen (Menü ⋯).`)) return;
   deleteEntries(gs.map(g => g.id));
 }
-function renameList(old){
-  let name = (prompt(`Liste „${old}“ umbenennen in:`, old) || '').trim();
-  if (!name || name === old) return;
+function renameList(old, name){
+  if (name === undefined) name = (prompt(`Liste „${old}“ umbenennen in:`, old) || '').trim();
+  if (!name || name === old) return false;
   const merge = S.meta.lists.includes(name);
-  if (merge && !confirm(`Es gibt schon eine Liste „${name}“. Beide Listen zusammenführen?`)) return;
+  if (merge && !confirm(`Es gibt schon eine Liste „${name}“. Beide Listen zusammenführen?`)) return false;
+  if (S.meta.listInfo?.[old]) { if (!merge || !S.meta.listInfo[name]?.ja) S.meta.listInfo[name] = {...(S.meta.listInfo[name] || {}), ...S.meta.listInfo[old]}; delete S.meta.listInfo[old]; }
   S.meta.lists = merge ? S.meta.lists.filter(x => x !== old) : S.meta.lists.map(x => x === old ? name : x);
   if (S.meta.listOrder?.[old]) { S.meta.listOrder[name] = [...(merge ? S.meta.listOrder[name] || [] : []), ...S.meta.listOrder[old]]; delete S.meta.listOrder[old]; }
   const ch = [];
@@ -961,6 +1023,7 @@ function renameList(old){
   saveMeta(); if (ch.length) quiet(DB.put(ch));
   if (S.f.list === old) S.f.list = name;
   render(); toast(merge ? `✓ „${old}“ in „${name}“ zusammengeführt` : `✓ Umbenannt in „${name}“`);
+  return true;
 }
 
 /* ---------- Reihen & Duplikate (Titelabgleich) ---------- */
@@ -1009,6 +1072,13 @@ const Rel = {
   dice(a, b){ if (!a.size || !b.size) return 0; let n = 0; for (const x of a) if (b.has(x)) n++; return 2 * n / (a.size + b.size); },
   lang(g){ return (g.tags.language||[]).filter(x => !['translated','rewrite','speechless','text cleaned'].includes(x))[0] || '?'; },
 
+  rangeOf(g){
+    for (const b of this.baseTitles(g)) {
+      const m = this.mainPart(b).normalize('NFKC').match(/(\d{1,3})\s*[-–~〜]\s*(\d{1,3})\s*$/);
+      if (m && +m[1] < +m[2] && +m[2] - +m[1] < 50) return [+m[1], +m[2]];
+    }
+    return null;
+  },
   numOf(g){
     for (const b of this.baseTitles(g)) { const s = this.series(this.norm(this.mainPart(b))); if (s.num !== null) return s.num; }
     return null;
@@ -1133,7 +1203,7 @@ function showRelations(tab){
     ? `<div class="rvsec"><div class="rvhead"><b>${gr.kind === 'same' ? '⧉ Gleiche Sprache – evtl. doppelt' : '🌐 Andere Sprache / Version'} (${gr.ids.length})</b><button data-relign="${esc(gr.sig)}">Kein Duplikat</button></div>
        <div class="rvlist">${gr.ids.map(id => relItem(id)).join('')}</div></div>`
     : (c => `<div class="rvsec" ${c.done ? 'style="opacity:.6"' : ''}><div class="rvhead"><b>📚 ${esc(gr.name)} (${gr.ids.length})</b>${gr.missing.length ? `<span class="pill warn" title="In deinen Favoriten nicht gefunden">fehlt: Teil ${gr.missing.join(', ')}</span>` : ''}
-         ${c.done ? `<span class="pill ok">✓ in Liste „${esc(c.list)}“</span>`
+         ${c.done ? `<span class="pill ok">✓ in Liste „${esc(listLabel(c.list))}“</span>`
            : c.n ? `<span class="pill warn">Liste „${esc(c.list)}“ enthält ${c.n} von ${gr.ids.length}</span><button data-rellist="${esc(gr.sig)}" data-target="${esc(c.list)}">Rest zu „${esc(c.list)}“ hinzufügen</button>`
            : `<button data-rellist="${esc(gr.sig)}">Als Liste anlegen</button>`}<button data-relign="${esc(gr.sig)}">Keine Reihe</button></div>`)(cov.get(gr.sig)) + `
        <div class="rvlist">${gr.parts.map(p => relItem(p.id, partPill(p.num))).join('')}</div></div>`).join('')
@@ -1165,7 +1235,14 @@ function onRelClick(e){
     if (!S.meta.lists.includes(name)) S.meta.lists.push(name);
     const ch = [];
     for (const id of gr.ids) { const g = S.all.get(id); if (g && !g.user.lists.includes(name)) { g.user.lists.push(name); hayCache.delete(g); ch.push(g); } }
-    if (!el.dataset.target) saveOrder(name, fillGaps(gr.parts.map(p => ({id:p.id}))));
+    if (!el.dataset.target) {
+      saveOrder(name, fillGaps(gr.parts.map(p => ({id:p.id}))));
+      if (!S.meta.listInfo?.[name]?.ja) {   // japanischen Reihentitel aus "Japanisch | Englisch" übernehmen
+        const jt = Rel.baseTitles(S.all.get(gr.parts[0].id)).find(hasJa);
+        const ja = jt && Rel.mainPart(jt).replace(/[\s\-–—]*(?:第\s*\d+\s*[話巻章部回]|その\s*\d+|\d{1,3}(?:\s*[-–~]\s*\d{1,3})?|[前中後]編|[上下]巻?)\s*$/, '').trim();
+        if (ja) setListJa(name, ja);
+      }
+    }
     saveMeta(); quiet(DB.put(ch)); renderLists();
     toast(el.dataset.target ? `✓ ${ch.length} Einträge zu „${name}“ hinzugefügt` : `✓ Liste „${name}“ mit ${gr.ids.length} Einträgen angelegt`);
     const y = $('#modal').scrollTop; showRelations(); $('#modal').scrollTop = y; return;
@@ -1179,10 +1256,10 @@ function listBlocks(g){
     const lo = Math.max(0, Math.min(i - 3, items.length - 7)), hi = Math.min(items.length, lo + 7);
     const pos = items.slice(0, i + 1).filter(it => it.id).length, total = items.filter(it => it.id).length;
     const row = (it, k) => it.ph ? `<div class="rv" style="grid-template-columns:1fr;cursor:default"><small>⬚ ${esc(it.ph)} – fehlt</small></div>`
-      : it.id === g.id ? `<div class="rv" style="grid-template-columns:1fr;cursor:default;opacity:.6"><small>▶ ${k + 1}. dieser Eintrag</small></div>`
-      : relItem(it.id, `<span class="pill" style="padding:0 7px;margin-right:6px">${k + 1}</span>`);
+      : it.id === g.id ? `<div class="rv" style="grid-template-columns:1fr;cursor:default;opacity:.6"><small>▶ ${k + 1}. dieser Eintrag${chLabel(it) ? ' · Ch. ' + esc(chLabel(it)) : ''}</small></div>`
+      : relItem(it.id, `<span class="pill" style="padding:0 7px;margin-right:6px">${k + 1}</span>${chLabel(it) ? `<span class="pill" style="padding:0 7px;margin-right:6px;font-weight:400">Ch. ${esc(chLabel(it))}</span>` : ''}`);
     const prev = items.slice(0, i).reverse().find(it => it.id), next = items.slice(i + 1).find(it => it.id);
-    return `<div><div class="lbl" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">📋 Liste „${esc(l)}“ – ${pos} von ${total}
+    return `<div><div class="lbl" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap" title="${esc(listAlt(l))}">📋 Liste „${esc(listLabel(l))}“ – ${pos} von ${total}
         <span style="margin-left:auto;display:flex;gap:6px">${prev ? `<button class="linkbtn" data-gopen="${esc(prev.id)}">‹ vorheriger</button>` : ''}${next ? `<button class="linkbtn" data-gopen="${esc(next.id)}">nächster ›</button>` : ''}<button class="linkbtn" data-ordlist="${esc(l)}">⇅ ordnen</button></span></div>
       ${lo > 0 ? `<div class="more" style="border:none;padding:2px 0">… ${lo} davor</div>` : ''}${items.slice(lo, hi).map((it, k) => row(it, lo + k)).join('')}${hi < items.length ? `<div class="more" style="border:none;padding:2px 0">… ${items.length - hi} danach</div>` : ''}</div>`;
   });
@@ -1232,7 +1309,7 @@ function openDetail(id){
           <label class="check" style="margin:0 0 0 14px"><input type="checkbox" data-readflag ${u.read ? 'checked' : ''}> Gelesen</label>
         </div>
         <div><div class="lbl">Listen</div><div class="listbox">
-          ${S.meta.lists.map(l => `<label class="chip"><input type="checkbox" data-glist="${esc(l)}" ${u.lists.includes(l) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
+          ${sortedLists(new Map()).map(l => `<label class="chip" title="${esc(listAlt(l))}"><input type="checkbox" data-glist="${esc(l)}" ${u.lists.includes(l) ? 'checked' : ''}> ${esc(listLabel(l))}</label>`).join('')}
           <input data-newlist placeholder="+ neue Liste ⏎" style="width:150px;padding:3px 10px;border-radius:999px;font-size:12.5px">
         </div></div>
         <div><div class="lbl">Notizen</div><textarea data-notes placeholder="Eigene Notizen …">${esc(u.notes||'')}</textarea></div>
@@ -1277,8 +1354,14 @@ function onModalClick(e){
   if (S.modal === 'key' || S.modal === 'sync') onSyncClick(e);
   if (S.modal === 'rel') onRelClick(e);
   if (S.modal === 'listedit') onListEditClick(e);
+  if (S.modal === 'listname' && t.closest('[data-lnsave]')) return saveListName();
+  if (t.closest('[data-renlist]') && S.modal === 'listedit') return showListNameDialog(t.closest('[data-renlist]').dataset.renlist);
 }
 function onModalChange(e){
+  if (S.modal === 'listedit' && e.target.matches('[data-lch]')) {
+    const it = S.editItems[+e.target.dataset.lch]; if (!it) return;
+    it.ch = e.target.value.trim(); saveOrder(S.editList, S.editItems); renderListEditor(); if (S.f.list === S.editList) render(); return;
+  }
   const t = e.target;
   if (S.modal === 'detail') {
     const g = S.all.get(S.detailId); if (!g) return;
@@ -1292,6 +1375,7 @@ function onModalInput(e){
   if (S.modal === 'detail' && e.target.matches('[data-notes]')) { const g = S.all.get(S.detailId); g.user.notes = e.target.value; hayCache.delete(g); saveSoon(g); }
 }
 function onModalKey(e){
+  if (S.modal === 'listname' && e.key === 'Enter' && e.target.matches('input')) return saveListName();
   if (S.modal === 'key' && e.key === 'Enter' && e.target.matches('[data-keyinput]')) return saveKey();
   if (S.modal === 'detail' && e.target.matches('[data-newlist]') && e.key === 'Enter') {
     const name = e.target.value.trim(); if (!name) return;
@@ -1917,16 +2001,18 @@ function bind(){
   $('#lists').onclick = e => {
     let el;
     if ((el = e.target.closest('[data-ordlist]'))) { e.stopPropagation(); return showListEditor(el.dataset.ordlist); }
-    if ((el = e.target.closest('[data-renlist]'))) { e.stopPropagation(); return renameList(el.dataset.renlist); }
+    if ((el = e.target.closest('[data-renlist]'))) { e.stopPropagation(); return showListNameDialog(el.dataset.renlist); }
     if ((el = e.target.closest('[data-dellist]'))) {
       e.stopPropagation(); const l = el.dataset.dellist;
       if (!confirm(`Liste „${l}“ löschen? (Die Einträge selbst bleiben erhalten)`)) return;
-      S.meta.lists = S.meta.lists.filter(x => x !== l); if (S.meta.listOrder) delete S.meta.listOrder[l]; saveMeta();
+      S.meta.lists = S.meta.lists.filter(x => x !== l); if (S.meta.listOrder) delete S.meta.listOrder[l]; if (S.meta.listInfo) delete S.meta.listInfo[l]; saveMeta();
       const ch = []; for (const g of S.all.values()) if (g.user.lists.includes(l)) { g.user.lists = g.user.lists.filter(x => x !== l); hayCache.delete(g); ch.push(g); }
       quiet(DB.put(ch)); if (S.f.list === l) S.f.list = null; return render();
     }
     if ((el = e.target.closest('[data-list]'))) { S.f.list = S.f.list === el.dataset.list ? null : el.dataset.list; render(); }
   };
+  $('#listSort').onchange = e => { ls.set('listSort', e.target.value); renderLists(); };
+  $('#listLang').onclick = () => { ls.set('listLang', ls.get('listLang', 'en') === 'ja' ? 'en' : 'ja'); render(); };
   $('#newList').onkeydown = e => { if (e.key !== 'Enter') return; const n = e.target.value.trim(); if (!n) return; if (!S.meta.lists.includes(n)) { S.meta.lists.push(n); saveMeta(); } e.target.value = ''; renderLists(); };
   $('#btnSide').onclick = () => $('#side').classList.toggle('open');
   $('main').addEventListener('click', () => $('#side').classList.remove('open'));
