@@ -65,6 +65,8 @@ main{padding:14px 16px 60px;min-width:0}
 .chip .x{opacity:.6}
 .chip.add{border-color:var(--ok);color:#8ff0bb;cursor:default}
 .chip.rem{border-color:var(--bad);color:#ffadb5;cursor:default}
+.markbtn{align-self:center;padding:4px 10px;font-size:12.5px;white-space:nowrap}
+.markbtn.on{background:#3b6cff;border-color:#3b6cff;color:#fff}
 .relbox .rv{border-top:none;padding:5px 0;border-radius:8px}
 .relbox .rv:hover,.relitem:hover{background:var(--panel2)}
 .rvhead .pill{font-size:12px;padding:2px 9px}
@@ -72,6 +74,15 @@ main{padding:14px 16px 60px;min-width:0}
 
 #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:16px 14px}
 .card{cursor:pointer;min-width:0}
+.cmark{position:absolute;z-index:3;top:6px;left:6px;width:30px;height:30px;padding:0;border-radius:8px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.25);font-size:14px;opacity:0;transition:opacity .15s}
+.card:hover .cmark,body.has-marks .cmark,.cmark.on{opacity:1}
+.cmark.on{background:#3b6cff;border-color:#3b6cff}
+.card.marked .cover{outline:3px solid #3b6cff;outline-offset:-3px}
+#bulk{position:sticky;top:57px;z-index:18;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;background:#1a2547;border-bottom:1px solid #3b6cff}
+#bulk b{margin-right:4px}
+#bulk button,#bulk select{padding:5px 10px;font-size:13px}
+.facet .ren{opacity:0;color:var(--muted);padding:0 4px}
+.facet:hover .ren{opacity:1}
 .cover{position:relative;aspect-ratio:7/10;border-radius:var(--r);overflow:hidden;background:var(--panel2)}
 .cover img{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block;transition:transform .25s,filter .25s}
 .card:hover .cover img{transform:scale(1.035)}
@@ -79,6 +90,7 @@ main{padding:14px 16px 60px;min-width:0}
 .badges{position:absolute;z-index:2;left:6px;right:6px;bottom:6px;display:flex;gap:4px;flex-wrap:wrap}
 .b{background:rgba(0,0,0,.75);border-radius:5px;padding:1px 6px;font-size:11px;font-weight:600}
 .b.read{background:var(--ok);color:#06210f}
+.b.mk{background:#3b6cff;color:#fff}
 .b.rm{background:var(--warn);color:#2a1d00}
 .b.star{color:#ffd166}
 .card .t{margin-top:7px;font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -191,6 +203,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <button data-act="backup">💾 Backup exportieren (JSON)</button>
       <button data-act="restore">♻️ Backup einspielen</button>
       <button data-act="csv">📄 Archiv als CSV exportieren</button>
+      <button data-act="delremoved">🗑 Alle entfernten Einträge löschen</button>
       <button data-act="relations">🔗 Reihen &amp; Duplikate finden</button>
       <button data-act="covers">🖼 Cover-Sicherung an/aus</button>
       <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
@@ -201,6 +214,15 @@ textarea{width:100%;min-height:70px;resize:vertical}
 </header>
 
 <div id="errbar" class="hidden"><span></span><button class="icon" onclick="this.parentNode.classList.add('hidden')" title="Ausblenden">✕</button></div>
+<div id="bulk" class="hidden">
+  <b id="bulkCount"></b>
+  <button data-bulk="markview" title="Alle aktuell angezeigten Einträge markieren">Alle angezeigten markieren</button>
+  <select data-bulk="tolist"></select>
+  <button data-bulk="fromlist" class="hidden"></button>
+  <button data-bulk="showmarked"></button>
+  <button data-bulk="unmark">Markierung aufheben</button>
+  <button data-bulk="delete" class="danger">Aus Archiv löschen</button>
+</div>
 <div id="layout">
   <aside id="side">
     <section>
@@ -225,7 +247,9 @@ textarea{width:100%;min-height:70px;resize:vertical}
         <button data-status="active">Favoriten</button>
         <button data-status="removed">Entfernt</button>
       </div>
+      <button id="delRemoved" class="danger hidden" style="width:100%;margin-top:8px"></button>
       <label class="check"><input type="checkbox" id="fUnread"> Nur ungelesene</label>
+      <label class="check"><input type="checkbox" id="fMarked"> 🏷 Nur markierte <span class="muted" id="markCount"></span></label>
       <div class="row" style="margin-top:8px"><span class="muted" style="font-size:13px">Bewertung ab</span>
         <select id="fRating" style="flex:1"><option value="0">egal</option><option value="1">★</option><option value="2">★★</option><option value="3">★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option></select>
       </div>
@@ -294,7 +318,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pad = n => String(n).padStart(2,'0');
 const today = () => new Date().toISOString().slice(0,10);
-const defUser = () => ({rating:0, read:false, notes:'', lists:[], last_page:0});
+const defUser = () => ({rating:0, read:false, notes:'', lists:[], last_page:0, mark:false});
 // localStorage nur für kleine UI-Einstellungen – alle Schlüssel mit Tool-Präfix, damit andere Tools auf derselben Domain unberührt bleiben
 const LS_PREFIX = 'nhfav-';
 const ls = {
@@ -630,6 +654,7 @@ function computeView(){
   for (const g of S.all.values()) {
     if (f.status !== 'all' && g.status !== f.status) continue;
     if (f.unread && g.user.read) continue;
+    if (f.marked && !g.user.mark) continue;
     if (f.minRating && (g.user.rating||0) < f.minRating) continue;
     if (f.list && !(g.user.lists||[]).includes(f.list)) continue;
     let ok = true;
@@ -651,8 +676,9 @@ function addChip(type, name, mode='inc'){
 function card(g){
   const d = document.createElement('div'); d.className = 'card'; d.dataset.id = g.id;
   const lang = langCode(g), r = g.user.rating||0;
-  d.innerHTML = `<div class="cover"><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
-    <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}</div></div>
+  if (g.user.mark) d.classList.add('marked');
+  d.innerHTML = `<div class="cover"><button class="cmark ${g.user.mark ? 'on' : ''}" data-cmark title="Markieren · Shift+Klick: ganzen Bereich markieren">🏷</button><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
+    <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.user.mark?'<span class="b mk">🏷</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}</div></div>
     <div class="t">${esc(dispTitle(g))}</div><div class="s">${esc((g.tags.artist||[]).join(', ') || (g.tags.group||[]).join(', ') || (g.tags.parody||[]).join(', ') || '–')}</div>`;
   const img = d.querySelector('img'); img.loading = 'lazy'; loadImg(img, 'cover', g);
   return d;
@@ -678,7 +704,7 @@ function renderBar(){
   $('#count').textContent = S.view.length === total ? `${total} Einträge` : `${S.view.length} von ${total}`;
   const chips = S.f.chips.map((c,i) => `<span class="chip ${c.mode}" data-chip="${i}" title="Klick: einschließen ↔ ausschließen"><span class="t">${esc(TYPE_KEY[c.type])}</span><span class="nm">${esc(c.name)}</span><span class="x" data-chipx="${i}">✕</span></span>`);
   if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(S.f.list)}<span class="x">✕</span></span>`);
-  const any = chips.length || S.f.q || S.f.unread || S.f.minRating;
+  const any = chips.length || S.f.q || S.f.unread || S.f.marked || S.f.minRating;
   $('#chips').innerHTML = chips.join('') + (any ? `<button class="linkbtn" id="resetF">Filter zurücksetzen</button>` : '');
 }
 function renderFacets(){
@@ -694,7 +720,7 @@ function renderLists(){
   const cnt = new Map();
   for (const g of S.all.values()) for (const l of (g.user.lists||[])) cnt.set(l, (cnt.get(l)||0) + 1);
   $('#lists').innerHTML = S.meta.lists.length ? S.meta.lists.map(l =>
-    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}"><span>${esc(l)}</span><span><span class="n">${cnt.get(l)||0}</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
+    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}"><span>${esc(l)}</span><span><span class="n">${cnt.get(l)||0}</span><span class="ren" data-renlist="${esc(l)}" title="Liste umbenennen">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
     : '<div class="muted" style="font-size:13px">Noch keine Listen. Im Detailfenster kannst du Einträge zu Listen hinzufügen.</div>';
 }
 function renderStat(){
@@ -702,6 +728,8 @@ function renderStat(){
   for (const g of S.all.values()) { if (g.status === 'active') a++; else r++; if (g.user.read) read++; }
   renderStorageInfo();
   const cov = [...S.all.keys()].filter(id => Covers.has(id)).length;
+  const mk = [...S.all.values()].filter(g => g.user.mark).length; $('#markCount').textContent = mk ? `(${mk})` : '';
+  renderBulk(mk, r);
   $('#stat').innerHTML = `${a} Favoriten · ${r} entfernt · ${read} gelesen<br>🖼 Cover gesichert: ${cov} / ${S.all.size}${Covers.enabled() ? '' : ' (aus)'}<br>Letztes Update: ${S.meta.lastImport ? new Date(S.meta.lastImport).toLocaleString('de-DE') : '–'}`;
 }
 function rebuildDatalist(){
@@ -709,6 +737,95 @@ function rebuildDatalist(){
   for (const g of S.all.values()) for (const t of TAG_TYPES) for (const n of (g.tags[t]||[])) keys.add(`${TYPE_KEY[t]}:${n}`);
   S.tagKeys = keys;
   $('#tagList').innerHTML = [...keys].sort().map(k => `<option value="${esc(k)}">`).join('');
+}
+
+/* ---------- Markieren & Sammelaktionen ---------- */
+function setMark(g, on){ if (g.user.mark === on) return false; g.user.mark = on; return true; }
+function afterMarkChange(changed){ if (changed.length) quiet(DB.put(changed)); changed.forEach(replaceCard); renderStat(); if (S.f.marked) render(); }
+function cardMark(id, shift){
+  const g = S.all.get(id); if (!g) return;
+  const idx = S.view.findIndex(x => x.id === id), on = !g.user.mark, changed = [];
+  if (shift && S.lastMarkIdx != null && idx >= 0) {
+    const [a, b] = [Math.min(S.lastMarkIdx, idx), Math.max(S.lastMarkIdx, idx)];
+    for (let i = a; i <= b; i++) if (setMark(S.view[i], on)) changed.push(S.view[i]);
+  } else if (setMark(g, on)) changed.push(g);
+  S.lastMarkIdx = idx;
+  afterMarkChange(changed);
+}
+function renderBulk(mk, removedN){
+  document.body.classList.toggle('has-marks', mk > 0);
+  $('#bulk').classList.toggle('hidden', !mk);
+  const dr = $('#delRemoved'); dr.classList.toggle('hidden', !(S.f.status === 'removed' && removedN)); dr.textContent = `🗑 Alle ${removedN} entfernten löschen`;
+  if (!mk) return;
+  $('#bulkCount').textContent = `🏷 ${mk} markiert`;
+  $('[data-bulk="markview"]').textContent = `Alle ${S.view.length} angezeigten markieren`;
+  $('[data-bulk="tolist"]').innerHTML = `<option value="">➕ Zu Liste hinzufügen …</option>${S.meta.lists.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('')}<option value="__nhfav_new__">+ Neue Liste …</option>`;
+  const fl = $('[data-bulk="fromlist"]'); fl.classList.toggle('hidden', !S.f.list); if (S.f.list) fl.textContent = `➖ Aus „${S.f.list}“ entfernen`;
+  $('[data-bulk="showmarked"]').textContent = S.f.marked ? 'Alle zeigen' : 'Nur markierte zeigen';
+}
+const markedList = () => [...S.all.values()].filter(g => g.user.mark);
+function addToList(gs, name){
+  if (!S.meta.lists.includes(name)) { S.meta.lists.push(name); saveMeta(); }
+  const ch = gs.filter(g => !g.user.lists.includes(name));
+  ch.forEach(g => { g.user.lists.push(name); hayCache.delete(g); });
+  if (ch.length) quiet(DB.put(ch));
+  return ch.length;
+}
+async function onBulk(e){
+  const el = e.target.closest('[data-bulk]'); if (!el) return;
+  const act = el.dataset.bulk;
+  if (act === 'tolist') {
+    if (e.type !== 'change' || !el.value) return;
+    let name = el.value; el.value = '';
+    if (name === '__nhfav_new__') { name = (prompt('Name der neuen Liste:') || '').trim(); if (!name) return; }
+    const gs = markedList(), n = addToList(gs, name);
+    renderLists(); renderStat();
+    const keep = confirm(`✓ ${n} Einträge zu „${name}“ hinzugefügt${gs.length - n ? ` (${gs.length - n} waren schon drin)` : ''}.\n\nMarkierung beibehalten?\n(OK = behalten, Abbrechen = aufheben)`);
+    if (!keep) afterMarkChange(gs.filter(g => setMark(g, false)));
+    return;
+  }
+  if (e.type !== 'click') return;
+  if (act === 'markview') return afterMarkChange(S.view.filter(g => setMark(g, true)));
+  if (act === 'unmark') return afterMarkChange(markedList().filter(g => setMark(g, false)));
+  if (act === 'showmarked') { S.f.marked = !S.f.marked; $('#fMarked').checked = S.f.marked; return render(); }
+  if (act === 'fromlist' && S.f.list) {
+    const l = S.f.list, ch = markedList().filter(g => g.user.lists.includes(l));
+    ch.forEach(g => { g.user.lists = g.user.lists.filter(x => x !== l); hayCache.delete(g); });
+    if (ch.length) quiet(DB.put(ch)); toast(`${ch.length} aus „${l}“ entfernt`); return render();
+  }
+  if (act === 'delete') {
+    const gs = markedList(), act_ = gs.filter(g => g.status === 'active').length;
+    if (!confirm(`${gs.length} markierte Einträge endgültig aus dem Archiv löschen?\nBewertung, Notizen und Listen-Zuordnung gehen verloren.${act_ ? `\n\nAchtung: ${act_} davon sind noch in deinen nhentai-Favoriten und kommen beim nächsten Sync als „neu“ zurück.` : ''}`)) return;
+    return deleteEntries(gs.map(g => g.id));
+  }
+}
+async function deleteEntries(ids){
+  if (!ids.length) return;
+  try { await DB.del(ids); } catch { return; }   // Fehler wird in der Leiste gemeldet, Archiv bleibt unverändert
+  ids.forEach(id => S.all.delete(id)); Covers.remove(ids); Rel.invalidate();
+  if (S.modal === 'detail' && !S.all.has(S.detailId)) closeModal();
+  rebuildDatalist(); render(); toast(`🗑 ${ids.length} Einträge gelöscht`);
+}
+function deleteRemoved(){
+  const gs = [...S.all.values()].filter(g => g.status === 'removed');
+  if (!gs.length) return toast('Keine entfernten Einträge vorhanden.');
+  const withData = gs.filter(g => g.user.rating || g.user.notes || g.user.lists.length).length;
+  if (!confirm(`Alle ${gs.length} Einträge löschen, die nicht mehr in deinen nhentai-Favoriten sind?${withData ? `\n\n${withData} davon haben Bewertung, Notizen oder Listen – das geht verloren.` : ''}\n\nTipp: Vorher ein Backup machen (Menü ⋯).`)) return;
+  deleteEntries(gs.map(g => g.id));
+}
+function renameList(old){
+  let name = (prompt(`Liste „${old}“ umbenennen in:`, old) || '').trim();
+  if (!name || name === old) return;
+  const merge = S.meta.lists.includes(name);
+  if (merge && !confirm(`Es gibt schon eine Liste „${name}“. Beide Listen zusammenführen?`)) return;
+  S.meta.lists = merge ? S.meta.lists.filter(x => x !== old) : S.meta.lists.map(x => x === old ? name : x);
+  const ch = [];
+  for (const g of S.all.values()) if (g.user.lists.includes(old)) {
+    g.user.lists = [...new Set(g.user.lists.map(x => x === old ? name : x))]; hayCache.delete(g); ch.push(g);
+  }
+  saveMeta(); if (ch.length) quiet(DB.put(ch));
+  if (S.f.list === old) S.f.list = name;
+  render(); toast(merge ? `✓ „${old}“ in „${name}“ zusammengeführt` : `✓ Umbenannt in „${name}“`);
 }
 
 /* ---------- Reihen & Duplikate (Titelabgleich) ---------- */
@@ -843,8 +960,8 @@ const Rel = {
 const partPill = n => n === null ? '' : `<span class="pill" style="padding:0 7px;margin-right:6px">${n >= 90 ? 'Ende' : n}</span>`;
 function relItem(id, extra=''){
   const g = S.all.get(id); if (!g) return '';
-  return `<div class="rv relitem" data-gopen="${esc(id)}" style="grid-template-columns:44px 1fr"><span class="thumb"><img alt="" data-gid="${esc(id)}"></span>
-    <span><b>${extra}${esc(dispTitle(g))}</b><small>#${esc(id)} · ${esc(Rel.lang(g))} · ${g.pages||'?'} S. · ${esc((g.tags.artist||[]).join(', ') || '–')}${g.status === 'removed' ? ' · entfernt' : ''}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}</small></span></div>`;
+  return `<div class="rv relitem" data-gopen="${esc(id)}" style="grid-template-columns:44px 1fr auto"><span class="thumb"><img alt="" data-gid="${esc(id)}"></span>
+    <span><b>${extra}${esc(dispTitle(g))}</b><small>#${esc(id)} · ${esc(Rel.lang(g))} · ${g.pages||'?'} S. · ${esc((g.tags.artist||[]).join(', ') || '–')}${g.status === 'removed' ? ' · entfernt' : ''}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}</small></span><button class="markbtn ${g.user.mark ? 'on' : ''}" data-mark="${esc(id)}" title="Markieren, um es beim Sync gezielt zu prüfen (z. B. wenn du es auf nhentai entfernst)">🏷 ${g.user.mark ? 'Markiert' : 'Markieren'}</button></div>`;
 }
 function fillThumbs(root){ root.querySelectorAll('img[data-gid]').forEach(img => { const g = S.all.get(img.dataset.gid); img.loading = 'lazy'; if (g) loadImg(img, 'cover', g); }); }
 
@@ -885,8 +1002,14 @@ function showRelations(tab){
   fillThumbs($('#modalBody'));
   if (S.modal !== 'rel') showModal('rel'); 
 }
+function toggleMark(btn){
+  const g = S.all.get(btn.dataset.mark); if (!g) return;
+  g.user.mark = !g.user.mark; saveSoon(g); replaceCard(g); renderStat();
+  btn.classList.toggle('on', g.user.mark); btn.textContent = '🏷 ' + (g.user.mark ? 'Markiert' : 'Markieren');
+}
 function onRelClick(e){
   let el;
+  if ((el = e.target.closest('[data-mark]'))) return toggleMark(el);
   if ((el = e.target.closest('[data-reltab]'))) return showRelations(el.dataset.reltab);
   if ((el = e.target.closest('[data-reldone]'))) { S.relShowDone = el.checked; return showRelations(); }
   if ((el = e.target.closest('[data-relign]'))) {
@@ -945,7 +1068,8 @@ function openDetail(id){
       <div class="personal">
         <div class="row"><span class="lbl" style="margin:0 6px 0 0">Bewertung</span>
           <div class="stars">${[1,2,3,4,5].map(i => `<span data-star="${i}" class="${i <= (u.rating||0) ? 'on' : ''}">★</span>`).join('')}</div>
-          <label class="check" style="margin:0 0 0 auto"><input type="checkbox" data-readflag ${u.read ? 'checked' : ''}> Gelesen</label>
+          <label class="check" style="margin:0 0 0 auto" title="Markierte Einträge kannst du beim Sync gezielt prüfen lassen"><input type="checkbox" data-markflag ${u.mark ? 'checked' : ''}> 🏷 Markiert</label>
+          <label class="check" style="margin:0 0 0 14px"><input type="checkbox" data-readflag ${u.read ? 'checked' : ''}> Gelesen</label>
         </div>
         <div><div class="lbl">Listen</div><div class="listbox">
           ${S.meta.lists.map(l => `<label class="chip"><input type="checkbox" data-glist="${esc(l)}" ${u.lists.includes(l) ? 'checked' : ''}> ${esc(l)}</label>`).join('')}
@@ -970,6 +1094,7 @@ function onModalClick(e){
   if (S.modal === 'detail') {
     const g = S.all.get(S.detailId); if (!g) return;
     let el;
+    if ((el = t.closest('[data-mark]'))) { toggleMark(el); if (el.dataset.mark === g.id) { const cb = $('[data-markflag]'); if (cb) cb.checked = g.user.mark; } return; }
     if (t.closest('[data-relback]')) { S.relBack = false; return showRelations(); }
     if ((el = t.closest('[data-gopen]'))) return openDetail(el.dataset.gopen);
     if ((el = t.closest('[data-read]'))) return openReader(g.id, +el.dataset.read);
@@ -994,6 +1119,7 @@ function onModalChange(e){
   const t = e.target;
   if (S.modal === 'detail') {
     const g = S.all.get(S.detailId); if (!g) return;
+    if (t.matches('[data-markflag]')) { g.user.mark = t.checked; saveSoon(g); replaceCard(g); renderStat(); }
     if (t.matches('[data-readflag]')) { g.user.read = t.checked; if (!t.checked) g.user.last_page = 0; saveSoon(g); replaceCard(g); renderStat(); }
     if (t.matches('[data-glist]')) { const l = t.dataset.glist; g.user.lists = t.checked ? [...new Set([...g.user.lists, l])] : g.user.lists.filter(x => x !== l); hayCache.delete(g); saveSoon(g); renderLists(); }
   }
@@ -1197,10 +1323,13 @@ function showReview(rv){
   const nothing = !n && !c && !r && !rv.reactivated.length && !rv.silent.length;
   const more = (len) => len > MAXROWS ? `<div class="more">… und ${len - MAXROWS} weitere (werden entsprechend der Auswahl „Alle/Keine“ übernommen)</div>` : '';
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Import prüfen</h2>
-  <div class="sum"><span class="pill ok">${n} neu</span><span class="pill warn">${c} geändert</span>${rv.favIds ? `<span class="pill bad">${r} nicht mehr favorisiert</span>` : ''}${rv.reactivated.length ? `<span class="pill ok">${rv.reactivated.length} wieder favorisiert</span>` : ''}<span class="pill">${rv.unchanged} unverändert</span></div>
+  ${rv.markCheck ? '' : `<div class="sum"><span class="pill ok">${n} neu</span><span class="pill warn">${c} geändert</span>${rv.favIds ? `<span class="pill bad">${r} nicht mehr favorisiert</span>` : ''}${rv.reactivated.length ? `<span class="pill ok">${rv.reactivated.length} wieder favorisiert</span>` : ''}<span class="pill">${rv.unchanged} unverändert</span></div>`}
   ${rv.missing.length ? `<div class="warnbox">⚠ ${rv.missing.length} Favoriten stehen in der Datei nur als ID (ohne Details) und fehlen im Archiv. Im Skript „Bekannte IDs vergessen“ klicken und dann erneut „Neue holen“ – dann kommen sie mit.</div>` : ''}
   ${rv.errors.length ? `<div class="warnbox">⚠ ${rv.errors.length} Galerien konnte das Skript nicht laden (IDs: ${esc(rv.errors.slice(0,20).join(', '))}${rv.errors.length > 20 ? ' …' : ''}). Einfach später nochmal „Neue holen“.</div>` : ''}
-  ${!rv.favIds && S.all.size ? `<div class="muted" style="font-size:13px;margin-bottom:12px">Diese Datei enthält keine vollständige Favoritenliste, daher wird nicht geprüft, ob etwas entfernt wurde.</div>` : ''}
+  ${rv.markCheck ? `<div class="sum"><span class="pill bad">${rv.markCheck.gone.length} nicht mehr favorisiert</span><span class="pill">${rv.markCheck.still.length} noch favorisiert</span>${rv.reactivated.length ? `<span class="pill ok">${rv.reactivated.length} wieder favorisiert</span>` : ''}</div>
+    <div class="muted" style="font-size:13px;margin-bottom:12px">Geprüft wurden nur deine 🏷 markierten Einträge${rv.markCheck.partial ? ' (abgebrochen – nicht alle)' : ''}. Nicht mehr favorisierte verlieren beim Übernehmen ihre Markierung, noch favorisierte bleiben markiert.</div>
+    ${rv.markCheck.still.length ? `<div class="rvsec"><div class="rvhead"><b>⭐ Noch in deinen Favoriten (${rv.markCheck.still.length})</b></div><div class="rvlist">${rv.markCheck.still.slice(0, MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}</small></span></div>`).join('')}</div></div>` : ''}` : ''}
+  ${!rv.favIds && !rv.markCheck && S.all.size ? `<div class="muted" style="font-size:13px;margin-bottom:12px">Diese Datei enthält keine vollständige Favoritenliste, daher wird nicht geprüft, ob etwas entfernt wurde.</div>` : ''}
   ${n ? `<div class="rvsec"><div class="rvhead"><b>🆕 Neu (${n})</b><button data-sel="new:1">Alle</button><button data-sel="new:0">Keine</button></div><div class="rvlist">${rv.news.slice(0,MAXROWS).map(g => rvRow(g,'data-new',true)).join('')}${more(n)}</div></div>` : ''}
   ${c ? `<div class="rvsec"><div class="rvhead"><b>✏️ Geändert (${c})</b><button data-sel="chg:1">Alle übernehmen</button><button data-sel="chg:0">Alle ablehnen</button></div>
      <div class="more" style="border-top:none">Haken = Änderung übernehmen. Abgelehnte Änderungen werden gemerkt und beim nächsten Import nicht erneut gefragt, solange sie gleich bleiben.</div>
@@ -1247,6 +1376,7 @@ async function applyReview(){
   }
   const newRecs = rv.news.filter(g => rv.newSel.has(g.id)).map(g => ({...g, status:'active', added_at:now, updated_at:now, user:defUser()}));
   if (rv.rmMode === 'mark') for (const g of rv.removed) put.set(g.id, {...cur(g.id), status:'removed', removed_at:now});
+  if (rv.markCheck) for (const g of rv.markCheck.gone) { const r = cur(g.id); if (r) put.set(g.id, {...r, user:{...r.user, mark:false}}); }
   for (const id of rv.reactivated) { const r = {...cur(id), status:'active'}; delete r.removed_at; put.set(id, r); }
   if (rv.favIds) {
     const idx = new Map(rv.favIds.map((id,i) => [id,i]));
@@ -1329,12 +1459,37 @@ function showSyncDialog(){
   if (!Api.key()) return showKeyDialog();
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>🔄 Mit nhentai synchronisieren</h2>
   <p class="muted" style="margin-top:-6px">${connHint()} · <a href="#" data-key>Key ändern</a></p>
-  <div class="row"><button class="primary" data-sync="quick">🆕 Neue holen</button><button data-sync="full">🔄 Komplett abgleichen</button></div>
+  <div class="row"><button class="primary" data-sync="quick">🆕 Neue holen</button><button data-sync="full">🔄 Komplett abgleichen</button>${(n => `<button data-sync="marked" ${n ? '' : 'disabled title="Keine Einträge markiert"'}>🏷 Markierte prüfen (${n})</button>`)([...S.all.values()].filter(g => g.user.mark).length)}</div>
   <p class="muted" style="font-size:13px"><b>Neue holen</b> stoppt, sobald eine Favoriten-Seite nur Bekanntes enthält – meist wenige Sekunden.<br>
-  <b>Komplett abgleichen</b> liest alle Favoriten-Seiten (nhentai erlaubt 15 pro Minute, also ca. 4 s pro Seite) und erkennt dabei geänderte Tags und entfernte Favoriten.</p>
+  <b>Komplett abgleichen</b> liest alle Favoriten-Seiten (nhentai erlaubt 15 pro Minute, also ca. 4 s pro Seite) und erkennt dabei geänderte Tags und entfernte Favoriten.<br>
+  <b>Markierte prüfen</b> fragt nur für deine 🏷 markierten Einträge nach, ob sie noch favorisiert sind (ca. 4 s pro Eintrag) – praktisch, nachdem du z. B. Duplikate auf nhentai entfernt hast.</p>
   <div id="syncProg" style="min-height:22px;font-weight:600"></div>
   <div class="row foot"><button data-x>Schließen</button><button data-syncstop class="hidden">⏹ Abbrechen</button></div>`;
   showModal('sync');
+}
+async function runMarkedCheck(prog){
+  const marked = [...S.all.values()].filter(g => g.user.mark);
+  const still = [], gone = [], errors = [];
+  for (let i = 0; i < marked.length && !S.sync.abort; i++) {
+    const g = marked[i];
+    prog(`Prüfe markierte ${i + 1} / ${marked.length} (noch ca. ${Math.max(1, Math.ceil((marked.length - i) * (S.favViaDetail === false ? GAP.fav : GAP.gal) / 60000))} Min.) …`);
+    try {
+      let fav;
+      if (S.favViaDetail !== false) {   // Galerie-Abfrage mit include=favorite: 45/min statt 15/min
+        const d = await Api.get(`/galleries/${g.id}?include=favorite`, 'gal', GAP.gal);
+        if (typeof d.is_favorited === 'boolean') { fav = d.is_favorited; S.favViaDetail = true; } else S.favViaDetail = false;
+      }
+      if (fav === undefined) fav = (await Api.get(`/galleries/${g.id}/favorite`, 'favchk', GAP.fav)).favorited;
+      (fav ? still : gone).push(g);
+    }
+    catch (e) { if (/autorisiert|CORS|Bridge|Rate-Limit/.test(e.message)) throw e; errors.push(g.id); }
+  }
+  if (!still.length && !gone.length) { prog(S.sync.abort ? 'Abgebrochen.' : 'Nichts geprüft.'); return; }
+  const rv = {news:[], changes:[], silent:[], unchanged:0, missing:[], errors, imgs:new Map(), rmMode:'mark', favIds:null,
+    removed: gone.filter(g => g.status === 'active'), reactivated: still.filter(g => g.status === 'removed').map(g => g.id),
+    markCheck: {still, gone, partial: !!S.sync.abort}, newSel:new Set(), chgSel:new Set()};
+  S.sync = null;
+  showReview(rv);
 }
 async function runSync(mode){
   const prog = h => { const el = $('#syncProg'); if (el) el.innerHTML = h; };
@@ -1346,6 +1501,7 @@ async function runSync(mode){
     if (!S.meta.cdn || Date.now() - (S.meta.cdn.at||0) > 864e5) {
       try { const c = await Api.get('/cdn', 'misc', 0); S.meta.cdn = {image_servers:c.image_servers||[], thumb_servers:c.thumb_servers||[], at:Date.now()}; saveMeta(); } catch (e) { if (e.message === 'CORS') throw e; }
     }
+    if (mode === 'marked') return await runMarkedCheck(prog);
     const items = []; let page = 1, total = 1;
     while (page <= total && !S.sync.abort) {
       prog(`Favoriten-Seite ${page}${total > 1 ? ` / ${total} (noch ca. ${Math.ceil((total - page) * GAP.fav / 60000)} Min.)` : ''} …`);
@@ -1495,6 +1651,7 @@ function showHelp(){
     <li><b>Filter-Chips</b>: Klick wechselt zwischen einschließen (grün) und ausschließen (rot). Shift+Klick auf einen Tag schließt direkt aus.</li>
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
+    <li><b>🏷 Markieren</b>: Im Detailfenster oder in „Reihen &amp; Duplikate“ Einträge markieren (z. B. Duplikate, die du auf nhentai entfernst). Unter 🔄 Sync → „Markierte prüfen“ wird dann nur für diese nachgefragt.</li>
     <li><b>Reihen &amp; Duplikate</b> (Menü ⋯): gleicht die Titel ab und findet Teile derselben Reihe (inkl. fehlender Teile) sowie doppelte Einträge bzw. andere Sprachversionen. Im Detailfenster stehen verwandte Einträge direkt unter den Tags.</li>
     <li><b>Cover-Sicherung</b>: Cover werden im Hintergrund lokal gespeichert und bleiben sichtbar, auch wenn eine Galerie auf nhentai gelöscht wird. Sie sind <i>nicht</i> im JSON-Backup enthalten.</li>
     <li><b>Backup</b> (Menü ⋯): Exportiert alles inkl. Bewertungen, Notizen, Listen – damit kannst du auch auf ein anderes Gerät umziehen.</li>
@@ -1531,6 +1688,7 @@ function bind(){
     if (a === 'csv') exportCSV();
     if (a === 'help') showHelp();
     if (a === 'relations') showRelations();
+    if (a === 'delremoved') deleteRemoved();
     if (a === 'covers') {
       const on = !Covers.enabled(); ls.set('covercache', on);
       if (on) { Covers.stopped = false; Covers.enqueueMissing(); toast('Cover-Sicherung an – läuft im Hintergrund.'); }
@@ -1567,15 +1725,22 @@ function bind(){
 
   $('#chips').onclick = e => {
     let el;
-    if (e.target.id === 'resetF') { S.f.chips = []; S.f.q = ''; $('#q').value = ''; S.f.list = null; S.f.unread = false; S.f.minRating = 0; $('#fUnread').checked = false; $('#fRating').value = '0'; return render(); }
+    if (e.target.id === 'resetF') { S.f.chips = []; S.f.q = ''; $('#q').value = ''; S.f.list = null; S.f.unread = false; S.f.marked = false; S.f.minRating = 0; $('#fUnread').checked = false; $('#fMarked').checked = false; $('#fRating').value = '0'; return render(); }
     if (e.target.closest('[data-listx]')) { S.f.list = null; return render(); }
     if ((el = e.target.closest('[data-chipx]'))) { S.f.chips.splice(+el.dataset.chipx, 1); return render(); }
     if ((el = e.target.closest('[data-chip]'))) { const c = S.f.chips[+el.dataset.chip]; c.mode = c.mode === 'inc' ? 'exc' : 'inc'; render(); }
   };
-  $('#grid').onclick = e => { const c = e.target.closest('.card'); if (c) openDetail(c.dataset.id); };
+  $('#grid').onclick = e => {
+    const c = e.target.closest('.card'); if (!c) return;
+    if (e.target.closest('[data-cmark]')) { e.stopPropagation(); return cardMark(c.dataset.id, e.shiftKey); }
+    openDetail(c.dataset.id);
+  };
+  $('#bulk').addEventListener('click', onBulk); $('#bulk').addEventListener('change', onBulk);
+  $('#delRemoved').onclick = deleteRemoved;
   $('#sort').onchange = e => { S.sort = e.target.value; if (S.sort === 'random') S.rnd.clear(); ls.set('sort', S.sort); render(); };
   $('#segStatus').onclick = e => { const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; ls.set('status', S.f.status); document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x === b)); render(); };
   $('#fUnread').onchange = e => { S.f.unread = e.target.checked; render(); };
+  $('#fMarked').onchange = e => { S.f.marked = e.target.checked; render(); };
   $('#fRating').onchange = e => { S.f.minRating = +e.target.value; render(); };
   $('#facetType').innerHTML = TAG_TYPES.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
   $('#facetType').value = S.facetType;
@@ -1587,6 +1752,7 @@ function bind(){
   };
   $('#lists').onclick = e => {
     let el;
+    if ((el = e.target.closest('[data-renlist]'))) { e.stopPropagation(); return renameList(el.dataset.renlist); }
     if ((el = e.target.closest('[data-dellist]'))) {
       e.stopPropagation(); const l = el.dataset.dellist;
       if (!confirm(`Liste „${l}“ löschen? (Die Einträge selbst bleiben erhalten)`)) return;
@@ -1616,7 +1782,7 @@ function bind(){
   });
 
   document.addEventListener('keydown', e => {
-    const typing = e.target.matches('input,textarea,select');
+    const typing = e.target.matches('input:not([type=checkbox]):not([type=radio]),textarea,select');
     if (!$('#reader').classList.contains('hidden')) {
       if (e.key === 'Escape') return closeReader();
       if (typing) return;
