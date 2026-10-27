@@ -68,6 +68,24 @@ main{padding:14px 16px 60px;min-width:0}
 .markbtn{align-self:center;padding:4px 10px;font-size:12.5px;white-space:nowrap}
 .markbtn.on{background:#3b6cff;border-color:#3b6cff;color:#fff}
 .relbox .rv{border-top:none;padding:5px 0;border-radius:8px}
+.ledit{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.lrow{display:grid;grid-template-columns:18px 26px 38px 1fr auto;gap:10px;align-items:center;padding:6px 10px;border-top:1px solid var(--line);background:var(--panel)}
+.lrow:first-child{border-top:none}
+.lrow .grip{cursor:grab;color:var(--muted);user-select:none}
+.lrow .pos{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.lrow .thumb{width:38px}
+.lrow .lt{cursor:pointer;min-width:0}
+.lrow .lt b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .lt small{color:var(--muted)}
+.lrow .lbtns{display:flex;gap:4px}
+.lrow .lbtns button{padding:3px 8px;font-size:12.5px}
+.lrow.isph{background:repeating-linear-gradient(45deg,var(--panel),var(--panel) 8px,var(--panel2) 8px,var(--panel2) 16px)}
+.lrow.dragging{opacity:.4}
+.lrow.over{box-shadow:inset 0 2px 0 var(--accent)}
+.phcard{cursor:default}
+.phcard .cover{border:2px dashed var(--line);background:transparent}
+.phcard .ph{flex-direction:column;line-height:1.5}
+@media (max-width:820px){.lrow{grid-template-columns:26px 34px 1fr;}.lrow .grip{display:none}.lrow .lbtns{grid-column:1/-1;justify-content:flex-end}}
 .relbox .rv:hover,.relitem:hover{background:var(--panel2)}
 .rvhead .pill{font-size:12px;padding:2px 9px}
 .linkbtn{background:none;border:none;color:var(--accent2);padding:3px 6px}
@@ -663,8 +681,10 @@ function computeView(){
     if (terms.length) { const h = hay(g); for (const t of terms) if (h.includes(t.t) === t.neg) { ok = false; break; } if (!ok) continue; }
     v.push(g);
   }
-  v.sort(sorter());
+  if (f.list && S.sort === 'fav') { const ord = new Map(orderedList(f.list).filter(it => it.id).map((it, i) => [it.id, i])); v.sort((a, b) => (ord.get(a.id) ?? 1e9) - (ord.get(b.id) ?? 1e9)); }
+  else v.sort(sorter());
   S.view = v;
+  listPlaceholders();
 }
 function addChip(type, name, mode='inc'){
   const ex = S.f.chips.find(c => c.type === type && c.name === name);
@@ -692,7 +712,8 @@ function render(){
 }
 function renderMore(){
   const frag = document.createDocumentFragment(), end = Math.min(S.view.length, S.shown + PAGE_SIZE);
-  for (let i = S.shown; i < end; i++) frag.appendChild(card(S.view[i]));
+  for (let i = S.shown; i < end; i++) { (S.phBefore?.get(i) || []).forEach(l => frag.appendChild(phCard(l))); frag.appendChild(card(S.view[i])); }
+  if (end === S.view.length && end > S.shown) (S.phAfter || []).forEach(l => frag.appendChild(phCard(l)));
   S.shown = end; $('#grid').appendChild(frag);
 }
 function checkMore(){
@@ -700,10 +721,11 @@ function checkMore(){
   if ($('#sentinel').getBoundingClientRect().top < innerHeight + 900) { renderMore(); requestAnimationFrame(checkMore); }
 }
 function renderBar(){
+  const fo = document.querySelector('#sort option[value="fav"]'); if (fo) fo.textContent = S.f.list ? '📋 Listen-Reihenfolge' : 'Favoriten-Reihenfolge (neueste zuerst)';
   const total = [...S.all.values()].filter(g => S.f.status === 'all' || g.status === S.f.status).length;
   $('#count').textContent = S.view.length === total ? `${total} Einträge` : `${S.view.length} von ${total}`;
   const chips = S.f.chips.map((c,i) => `<span class="chip ${c.mode}" data-chip="${i}" title="Klick: einschließen ↔ ausschließen"><span class="t">${esc(TYPE_KEY[c.type])}</span><span class="nm">${esc(c.name)}</span><span class="x" data-chipx="${i}">✕</span></span>`);
-  if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(S.f.list)}<span class="x">✕</span></span>`);
+  if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(S.f.list)}<span class="x">✕</span></span><button class="linkbtn" data-ordlist="${esc(S.f.list)}">⇅ Liste ordnen</button>`);
   const any = chips.length || S.f.q || S.f.unread || S.f.marked || S.f.minRating;
   $('#chips').innerHTML = chips.join('') + (any ? `<button class="linkbtn" id="resetF">Filter zurücksetzen</button>` : '');
 }
@@ -720,7 +742,7 @@ function renderLists(){
   const cnt = new Map();
   for (const g of S.all.values()) for (const l of (g.user.lists||[])) cnt.set(l, (cnt.get(l)||0) + 1);
   $('#lists').innerHTML = S.meta.lists.length ? S.meta.lists.map(l =>
-    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}"><span>${esc(l)}</span><span><span class="n">${cnt.get(l)||0}</span><span class="ren" data-renlist="${esc(l)}" title="Liste umbenennen">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
+    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}"><span>${esc(l)}</span><span><span class="n">${cnt.get(l)||0}</span><span class="ren" data-ordlist="${esc(l)}" title="Reihenfolge &amp; Platzhalter">⇅</span><span class="ren" data-renlist="${esc(l)}" title="Liste umbenennen">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
     : '<div class="muted" style="font-size:13px">Noch keine Listen. Im Detailfenster kannst du Einträge zu Listen hinzufügen.</div>';
 }
 function renderStat(){
@@ -737,6 +759,118 @@ function rebuildDatalist(){
   for (const g of S.all.values()) for (const t of TAG_TYPES) for (const n of (g.tags[t]||[])) keys.add(`${TYPE_KEY[t]}:${n}`);
   S.tagKeys = keys;
   $('#tagList').innerHTML = [...keys].sort().map(k => `<option value="${esc(k)}">`).join('');
+}
+
+/* ---------- Eigene Listen: Reihenfolge & Platzhalter ---------- */
+// S.meta.listOrder[name] = [ 'galerie-id' | {ph:'Ch. 3', k:'zufallsschlüssel'} ]
+// Mitgliedschaft steht weiter in g.user.lists – die Reihenfolge ergänzt nur, was dort steht.
+const phKey = () => Math.random().toString(36).slice(2, 9);
+function orderedList(name){
+  const members = [...S.all.values()].filter(g => g.user.lists.includes(name));
+  const ids = new Set(members.map(g => g.id)), stored = (S.meta.listOrder||{})[name] || [], seen = new Set(), out = [];
+  for (const it of stored) {
+    if (typeof it === 'string') { if (ids.has(it) && !seen.has(it)) { seen.add(it); out.push({id:it}); } }
+    else if (it && it.ph) out.push({ph:it.ph, k:it.k || phKey()});
+  }
+  const rest = members.filter(g => !seen.has(g.id))
+    .sort((a, b) => (Rel.numOf(a) ?? 1e3) - (Rel.numOf(b) ?? 1e3) || (a.fav_index ?? 0) - (b.fav_index ?? 0));
+  rest.forEach(g => out.push({id:g.id}));
+  return out;
+}
+function saveOrder(name, items){
+  S.meta.listOrder = S.meta.listOrder || {};
+  S.meta.listOrder[name] = items.map(it => it.id || {ph:it.ph, k:it.k});
+  saveMeta();
+}
+const itemNum = it => it.id ? Rel.numOf(S.all.get(it.id)) : ((String(it.ph).match(/\d+/)||[])[0] ? +String(it.ph).match(/\d+/)[0] : null);
+function sortByNumber(items){
+  return items.map((it, i) => ({it, i, n:itemNum(it)})).sort((a, b) => (a.n ?? 1e3) - (b.n ?? 1e3) || a.i - b.i).map(x => x.it);
+}
+function fillGaps(items){
+  const nums = new Set(items.map(itemNum).filter(n => n !== null && n < 90));
+  if (!nums.size) return items;
+  const max = Math.max(...nums), add = [];
+  for (let n = 1; n < max; n++) if (!nums.has(n)) add.push({ph:'Teil ' + n, k:phKey()});
+  return sortByNumber([...items, ...add]);
+}
+
+function showListEditor(name){
+  S.editList = name; S.editItems = orderedList(name);
+  renderListEditor(); if (S.modal !== 'listedit') showModal('listedit');
+}
+function renderListEditor(){
+  const name = S.editList, items = S.editItems;
+  const rows = items.map((it, i) => {
+    const g = it.id && S.all.get(it.id);
+    const label = g ? `<b>${esc(dispTitle(g))}</b><small>#${esc(g.id)} · ${esc(Rel.lang(g))} · ${g.pages||'?'} S.${g.status === 'removed' ? ' · entfernt' : ''}</small>`
+                    : `<b style="color:var(--muted)">⬚ ${esc(it.ph)}</b><small>Platzhalter – fehlt in deinen Favoriten</small>`;
+    return `<div class="lrow ${g ? '' : 'isph'}" draggable="true" data-i="${i}">
+      <span class="grip" title="Ziehen zum Verschieben">⠿</span><span class="pos">${i + 1}</span>
+      <span class="thumb">${g ? `<img alt="" data-gid="${esc(g.id)}">` : ''}</span>
+      <span class="lt" ${g ? `data-lopen="${esc(g.id)}"` : `data-lren="${i}"`} title="${g ? 'Öffnen' : 'Klicken zum Umbenennen'}">${label}</span>
+      <span class="lbtns"><button data-lup="${i}" ${i ? '' : 'disabled'} title="Nach oben">↑</button><button data-ldown="${i}" ${i < items.length - 1 ? '' : 'disabled'} title="Nach unten">↓</button>
+      <button data-lph="${i}" title="Platzhalter davor einfügen">+⬚</button><button data-ldel="${i}" title="${g ? 'Aus der Liste entfernen' : 'Platzhalter löschen'}">✕</button></span></div>`;
+  }).join('');
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>📋 Liste „${esc(name)}“ ordnen</h2>
+    <p class="muted" style="font-size:13px;margin-top:-6px">Ziehen oder ↑↓ zum Verschieben. Platzhalter (⬚) markieren fehlende Kapitel – z. B. „Ch. 3“. Änderungen werden sofort gespeichert.</p>
+    <div class="row" style="margin-bottom:12px"><button data-lsort>🔢 Nach Teil-Nummer sortieren</button><button data-lgaps>⬚ Lücken mit Platzhaltern füllen</button><button data-lphend>+ Platzhalter am Ende</button>
+      <button data-lfilter style="margin-left:auto">In der Übersicht anzeigen</button></div>
+    <div class="ledit">${rows || '<p class="muted">Diese Liste ist leer.</p>'}</div>`;
+  fillThumbs($('#modalBody'));
+}
+function onListEditClick(e){
+  const t = e.target, items = S.editItems, name = S.editList; let el;
+  const commit = () => { saveOrder(name, items); renderListEditor(); if (S.f.list === name) render(); };
+  if ((el = t.closest('[data-lup]'))) { const i = +el.dataset.lup; [items[i-1], items[i]] = [items[i], items[i-1]]; return commit(); }
+  if ((el = t.closest('[data-ldown]'))) { const i = +el.dataset.ldown; [items[i+1], items[i]] = [items[i], items[i+1]]; return commit(); }
+  if ((el = t.closest('[data-lph]')) || t.closest('[data-lphend]')) {
+    const ph = (prompt('Bezeichnung des Platzhalters (z. B. „Ch. 3“):', guessPh(el ? +el.dataset.lph : items.length)) || '').trim(); if (!ph) return;
+    items.splice(el ? +el.dataset.lph : items.length, 0, {ph, k:phKey()}); return commit();
+  }
+  if ((el = t.closest('[data-lren]'))) { const it = items[+el.dataset.lren]; const ph = (prompt('Platzhalter umbenennen:', it.ph) || '').trim(); if (ph) { it.ph = ph; commit(); } return; }
+  if ((el = t.closest('[data-ldel]'))) {
+    const i = +el.dataset.ldel, it = items[i];
+    if (it.id) { const g = S.all.get(it.id); if (!confirm(`„${dispTitle(g)}“ aus der Liste „${name}“ entfernen?`)) return;
+      g.user.lists = g.user.lists.filter(x => x !== name); hayCache.delete(g); quiet(DB.put([g])); renderLists(); }
+    items.splice(i, 1); return commit();
+  }
+  if (t.closest('[data-lsort]')) { S.editItems = sortByNumber(items); saveOrder(name, S.editItems); renderListEditor(); if (S.f.list === name) render(); return; }
+  if (t.closest('[data-lgaps]')) { const before = items.length; S.editItems = fillGaps(items); saveOrder(name, S.editItems); renderListEditor(); if (S.f.list === name) render(); toast(S.editItems.length > before ? `${S.editItems.length - before} Platzhalter eingefügt` : 'Keine Lücken gefunden (Teil-Nummern nötig)'); return; }
+  if (t.closest('[data-lfilter]')) { S.f.list = name; if (S.sort !== 'fav') { S.sort = 'fav'; $('#sort').value = 'fav'; } closeModal(); return render(); }
+  if ((el = t.closest('[data-lopen]'))) { S.listBack = name; return openDetail(el.dataset.lopen); }
+}
+// Vorschlag für den Platzhalter-Namen: Nummer zwischen den Nachbarn
+function guessPh(i){
+  const prev = S.editItems.slice(0, i).reverse().map(itemNum).find(n => n !== null && n < 90);
+  return prev != null ? 'Ch. ' + (prev + 1) : 'Ch. ';
+}
+function bindListDrag(){
+  const mb = $('#modalBody'); let from = null;
+  mb.addEventListener('dragstart', e => { const r = e.target.closest?.('.lrow'); if (!r || S.modal !== 'listedit') return; from = +r.dataset.i; r.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+  mb.addEventListener('dragover', e => { if (from === null) return; const r = e.target.closest('.lrow'); if (!r) return; e.preventDefault(); mb.querySelectorAll('.lrow.over').forEach(x => x.classList.remove('over')); r.classList.add('over'); });
+  mb.addEventListener('drop', e => {
+    if (from === null) return; const r = e.target.closest('.lrow'); e.preventDefault(); if (!r) return;
+    const to = +r.dataset.i, items = S.editItems, [it] = items.splice(from, 1); items.splice(to, 0, it); from = null;
+    saveOrder(S.editList, items); renderListEditor(); if (S.f.list === S.editList) render();
+  });
+  mb.addEventListener('dragend', () => { from = null; mb.querySelectorAll('.lrow').forEach(x => x.classList.remove('dragging','over')); });
+}
+// Platzhalter in der Übersicht (nur bei Listenfilter in Listen-Reihenfolge ohne weitere Filter)
+function listPlaceholders(){
+  S.phBefore = new Map(); S.phAfter = [];
+  const f = S.f;
+  if (!f.list || S.sort !== 'fav' || f.q || f.chips.length || f.unread || f.marked || f.minRating || f.status !== 'all') return;
+  let pending = [], idx = 0; const pos = new Map(S.view.map((g, i) => [g.id, i]));
+  for (const it of orderedList(f.list)) {
+    if (it.ph) { pending.push(it.ph); continue; }
+    if (pos.has(it.id)) { if (pending.length) S.phBefore.set(pos.get(it.id), pending); pending = []; }
+  }
+  S.phAfter = pending;
+}
+function phCard(label){
+  const d = document.createElement('div'); d.className = 'card phcard';
+  d.innerHTML = `<div class="cover"><div class="ph">⬚<br><b>${esc(label)}</b><br><small>fehlt</small></div></div><div class="t" style="color:var(--muted)">${esc(label)}</div><div class="s">Platzhalter</div>`;
+  return d;
 }
 
 /* ---------- Markieren & Sammelaktionen ---------- */
@@ -819,6 +953,7 @@ function renameList(old){
   const merge = S.meta.lists.includes(name);
   if (merge && !confirm(`Es gibt schon eine Liste „${name}“. Beide Listen zusammenführen?`)) return;
   S.meta.lists = merge ? S.meta.lists.filter(x => x !== old) : S.meta.lists.map(x => x === old ? name : x);
+  if (S.meta.listOrder?.[old]) { S.meta.listOrder[name] = [...(merge ? S.meta.listOrder[name] || [] : []), ...S.meta.listOrder[old]]; delete S.meta.listOrder[old]; }
   const ch = [];
   for (const g of S.all.values()) if (g.user.lists.includes(old)) {
     g.user.lists = [...new Set(g.user.lists.map(x => x === old ? name : x))]; hayCache.delete(g); ch.push(g);
@@ -874,6 +1009,10 @@ const Rel = {
   dice(a, b){ if (!a.size || !b.size) return 0; let n = 0; for (const x of a) if (b.has(x)) n++; return 2 * n / (a.size + b.size); },
   lang(g){ return (g.tags.language||[]).filter(x => !['translated','rewrite','speechless','text cleaned'].includes(x))[0] || '?'; },
 
+  numOf(g){
+    for (const b of this.baseTitles(g)) { const s = this.series(this.norm(this.mainPart(b))); if (s.num !== null) return s.num; }
+    return null;
+  },
   analyze(){
     if (!this.dirty && this.cache) return this.cache;
     const info = new Map();
@@ -893,10 +1032,13 @@ const Rel = {
       for (const f of x.fulls) { if (!byFull.has(f)) byFull.set(f, []); byFull.get(f).push(id); }
       for (const c of x.cr) { if (!byCr.has(c)) byCr.set(c, []); byCr.get(c).push(id); }
     }
-    const sameNum = (a, b) => { const na = a.ser[0]?.num ?? null, nb = b.ser[0]?.num ?? null; return na === nb; };
-    for (const [f, ids] of byFull) for (let i = 1; i < ids.length; i++) {
-      const a = info.get(ids[0]), b = info.get(ids[i]);
-      if (this.overlap(a.cr, b.cr)) D.union(ids[0], ids[i]);   // gleicher Titel + gleicher Künstler (oder einer ohne Künstler-Tag)
+    // Teil-Nummer eines Eintrags = erste erkannte Nummer über alle Titelvarianten (z. B. nur im englischen Teil von "Jap. | Engl. Ch. 3")
+    const entryNum = x => x.ser.find(s => s.num !== null)?.num ?? null;
+    const sameNum = (a, b) => entryNum(a) === entryNum(b);
+    for (const [f, ids] of byFull) for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+      const a = info.get(ids[i]), b = info.get(ids[j]);
+      if (!sameNum(a, b)) continue;                                  // verschiedene Kapitel sind keine Duplikate
+      if (this.overlap(a.cr, b.cr)) D.union(ids[i], ids[j]);       // gleicher Titel + gleicher Künstler (oder einer ohne Künstler-Tag)
     }
     for (const ids of byCr.values()) {
       if (ids.length > 400) continue;
@@ -929,7 +1071,7 @@ const Rel = {
         if (na === null && nb === null && key.length < 10) continue;   // kurze Titel ohne Nummer: zu unsicher
         R.union(ids[i], ids[j]);
       }
-      for (const id of ids) { const s = members.get(id); if (!numOf.has(id) || s.num !== null) numOf.set(id, s.num); if (!nameOf.has(id)) nameOf.set(id, s.disp); }
+      for (const id of ids) { const s = members.get(id); if (!numOf.has(id) || (s.num !== null && numOf.get(id) === null)) numOf.set(id, s.num); if (!nameOf.has(id) || s.num !== null) nameOf.set(id, s.disp); }
     }
     const seriesGroups = [];
     for (const ids of R.groups([...info.keys()])) {
@@ -1023,6 +1165,7 @@ function onRelClick(e){
     if (!S.meta.lists.includes(name)) S.meta.lists.push(name);
     const ch = [];
     for (const id of gr.ids) { const g = S.all.get(id); if (g && !g.user.lists.includes(name)) { g.user.lists.push(name); hayCache.delete(g); ch.push(g); } }
+    if (!el.dataset.target) saveOrder(name, fillGaps(gr.parts.map(p => ({id:p.id}))));
     saveMeta(); quiet(DB.put(ch)); renderLists();
     toast(el.dataset.target ? `✓ ${ch.length} Einträge zu „${name}“ hinzugefügt` : `✓ Liste „${name}“ mit ${gr.ids.length} Einträgen angelegt`);
     const y = $('#modal').scrollTop; showRelations(); $('#modal').scrollTop = y; return;
@@ -1030,8 +1173,25 @@ function onRelClick(e){
   if ((el = e.target.closest('[data-gopen]'))) { S.relBack = true; return openDetail(el.dataset.gopen); }
 }
 // Block im Detailfenster
+function listBlocks(g){
+  return S.meta.lists.filter(l => g.user.lists.includes(l)).map(l => {
+    const items = orderedList(l), i = items.findIndex(it => it.id === g.id);
+    const lo = Math.max(0, Math.min(i - 3, items.length - 7)), hi = Math.min(items.length, lo + 7);
+    const pos = items.slice(0, i + 1).filter(it => it.id).length, total = items.filter(it => it.id).length;
+    const row = (it, k) => it.ph ? `<div class="rv" style="grid-template-columns:1fr;cursor:default"><small>⬚ ${esc(it.ph)} – fehlt</small></div>`
+      : it.id === g.id ? `<div class="rv" style="grid-template-columns:1fr;cursor:default;opacity:.6"><small>▶ ${k + 1}. dieser Eintrag</small></div>`
+      : relItem(it.id, `<span class="pill" style="padding:0 7px;margin-right:6px">${k + 1}</span>`);
+    const prev = items.slice(0, i).reverse().find(it => it.id), next = items.slice(i + 1).find(it => it.id);
+    return `<div><div class="lbl" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">📋 Liste „${esc(l)}“ – ${pos} von ${total}
+        <span style="margin-left:auto;display:flex;gap:6px">${prev ? `<button class="linkbtn" data-gopen="${esc(prev.id)}">‹ vorheriger</button>` : ''}${next ? `<button class="linkbtn" data-gopen="${esc(next.id)}">nächster ›</button>` : ''}<button class="linkbtn" data-ordlist="${esc(l)}">⇅ ordnen</button></span></div>
+      ${lo > 0 ? `<div class="more" style="border:none;padding:2px 0">… ${lo} davor</div>` : ''}${items.slice(lo, hi).map((it, k) => row(it, lo + k)).join('')}${hi < items.length ? `<div class="more" style="border:none;padding:2px 0">… ${items.length - hi} danach</div>` : ''}</div>`;
+  });
+}
 function relBlock(g){
-  const A = Rel.analyze(), d = A.dupOf.get(g.id), s = A.seriesOf.get(g.id), out = [];
+  const A = Rel.analyze(), d = A.dupOf.get(g.id), out = listBlocks(g);
+  let s = A.seriesOf.get(g.id);
+  // Erkannte Reihe nur zeigen, solange sie noch nicht vollständig in einer Liste dieses Eintrags steht
+  if (s) { const c = listCoverage(s); if (c.done && g.user.lists.includes(c.list)) s = null; }
   if (d && !A.ign.has(d.sig)) out.push(`<div><div class="lbl">⧉ ${d.kind === 'same' ? 'Mögliche Duplikate' : 'Andere Versionen / Sprachen'}</div>${d.ids.filter(id => id !== g.id).map(id => relItem(id)).join('')}</div>`);
   if (s && !A.ign.has(s.sig)) out.push(`<div><div class="lbl">📚 Reihe „${esc(s.name)}“ – ${s.ids.length} Teile${(c => c.done ? ` · <span style="color:var(--ok)">✓ in Liste „${esc(c.list)}“</span>` : c.n ? ` · Liste „${esc(c.list)}“ enthält ${c.n} von ${s.ids.length}` : '')(listCoverage(s))}${s.missing.length ? ` · <span style="color:var(--warn)">fehlt: Teil ${s.missing.join(', ')}</span>` : ''}</div>${s.parts.map(p => p.id === g.id
       ? `<div class="rv" style="grid-template-columns:1fr;cursor:default;opacity:.6"><small>▶ ${p.num !== null ? 'Teil ' + (p.num >= 90 ? 'Ende' : p.num) + ' – ' : ''}dieser Eintrag</small></div>`
@@ -1041,14 +1201,14 @@ function relBlock(g){
 
 /* ---------- Modal ---------- */
 function showModal(kind){ S.modal = kind; $('#modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; $('#modal').scrollTop = 0; }
-function closeModal(){ if (S.sync) S.sync.abort = true; S.relBack = false; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal(){ if (S.sync) S.sync.abort = true; S.relBack = false; S.listBack = null; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
 
 function openDetail(id){
   const g = S.all.get(id); if (!g) return;
   S.detailId = id;
   const u = g.user, resume = u.last_page > 1 && !u.read;
   const tags = TAG_TYPES.filter(t => (g.tags[t]||[]).length).map(t => `<div class="l">${TYPE_LABEL[t]}</div><div class="v">${g.tags[t].map(n => `<span class="chip" data-tag="${esc(t)}" data-name="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen">${esc(n)}</span>`).join('')}</div>`).join('');
-  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>${S.relBack ? '<button class="linkbtn" data-relback style="margin:-6px 0 8px -6px">‹ Zurück zu Reihen &amp; Duplikaten</button>' : ''}
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>${S.relBack ? '<button class="linkbtn" data-relback style="margin:-6px 0 8px -6px">‹ Zurück zu Reihen &amp; Duplikaten</button>' : S.listBack ? `<button class="linkbtn" data-listback style="margin:-6px 0 8px -6px">‹ Zurück zur Liste „${esc(S.listBack)}“</button>` : ''}
   <div class="detail">
     <div>
       <div class="dcover"><img alt=""></div>
@@ -1096,6 +1256,8 @@ function onModalClick(e){
     let el;
     if ((el = t.closest('[data-mark]'))) { toggleMark(el); if (el.dataset.mark === g.id) { const cb = $('[data-markflag]'); if (cb) cb.checked = g.user.mark; } return; }
     if (t.closest('[data-relback]')) { S.relBack = false; return showRelations(); }
+    if (t.closest('[data-listback]')) { const l = S.listBack; S.listBack = null; return showListEditor(l); }
+    if ((el = t.closest('[data-ordlist]'))) return showListEditor(el.dataset.ordlist);
     if ((el = t.closest('[data-gopen]'))) return openDetail(el.dataset.gopen);
     if ((el = t.closest('[data-read]'))) return openReader(g.id, +el.dataset.read);
     if ((el = t.closest('[data-nav]'))) return navDetail(+el.dataset.nav);
@@ -1114,6 +1276,7 @@ function onModalClick(e){
   if (S.modal === 'review') onReviewClick(e);
   if (S.modal === 'key' || S.modal === 'sync') onSyncClick(e);
   if (S.modal === 'rel') onRelClick(e);
+  if (S.modal === 'listedit') onListEditClick(e);
 }
 function onModalChange(e){
   const t = e.target;
@@ -1726,12 +1889,13 @@ function bind(){
   $('#chips').onclick = e => {
     let el;
     if (e.target.id === 'resetF') { S.f.chips = []; S.f.q = ''; $('#q').value = ''; S.f.list = null; S.f.unread = false; S.f.marked = false; S.f.minRating = 0; $('#fUnread').checked = false; $('#fMarked').checked = false; $('#fRating').value = '0'; return render(); }
+    if ((el = e.target.closest('[data-ordlist]'))) return showListEditor(el.dataset.ordlist);
     if (e.target.closest('[data-listx]')) { S.f.list = null; return render(); }
     if ((el = e.target.closest('[data-chipx]'))) { S.f.chips.splice(+el.dataset.chipx, 1); return render(); }
     if ((el = e.target.closest('[data-chip]'))) { const c = S.f.chips[+el.dataset.chip]; c.mode = c.mode === 'inc' ? 'exc' : 'inc'; render(); }
   };
   $('#grid').onclick = e => {
-    const c = e.target.closest('.card'); if (!c) return;
+    const c = e.target.closest('.card'); if (!c || c.classList.contains('phcard')) return;
     if (e.target.closest('[data-cmark]')) { e.stopPropagation(); return cardMark(c.dataset.id, e.shiftKey); }
     openDetail(c.dataset.id);
   };
@@ -1752,11 +1916,12 @@ function bind(){
   };
   $('#lists').onclick = e => {
     let el;
+    if ((el = e.target.closest('[data-ordlist]'))) { e.stopPropagation(); return showListEditor(el.dataset.ordlist); }
     if ((el = e.target.closest('[data-renlist]'))) { e.stopPropagation(); return renameList(el.dataset.renlist); }
     if ((el = e.target.closest('[data-dellist]'))) {
       e.stopPropagation(); const l = el.dataset.dellist;
       if (!confirm(`Liste „${l}“ löschen? (Die Einträge selbst bleiben erhalten)`)) return;
-      S.meta.lists = S.meta.lists.filter(x => x !== l); saveMeta();
+      S.meta.lists = S.meta.lists.filter(x => x !== l); if (S.meta.listOrder) delete S.meta.listOrder[l]; saveMeta();
       const ch = []; for (const g of S.all.values()) if (g.user.lists.includes(l)) { g.user.lists = g.user.lists.filter(x => x !== l); hayCache.delete(g); ch.push(g); }
       quiet(DB.put(ch)); if (S.f.list === l) S.f.list = null; return render();
     }
@@ -1767,7 +1932,7 @@ function bind(){
   $('main').addEventListener('click', () => $('#side').classList.remove('open'));
 
   const mb = $('#modalBody');
-  mb.addEventListener('click', onModalClick); mb.addEventListener('change', onModalChange);
+  mb.addEventListener('click', onModalClick); bindListDrag(); mb.addEventListener('change', onModalChange);
   mb.addEventListener('input', onModalInput); mb.addEventListener('keydown', onModalKey);
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal' && !['review','sync','key'].includes(S.modal)) closeModal(); });
 
