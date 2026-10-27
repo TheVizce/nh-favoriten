@@ -65,6 +65,9 @@ main{padding:14px 16px 60px;min-width:0}
 .chip .x{opacity:.6}
 .chip.add{border-color:var(--ok);color:#8ff0bb;cursor:default}
 .chip.rem{border-color:var(--bad);color:#ffadb5;cursor:default}
+.relbox .rv{border-top:none;padding:5px 0;border-radius:8px}
+.relbox .rv:hover,.relitem:hover{background:var(--panel2)}
+.rvhead .pill{font-size:12px;padding:2px 9px}
 .linkbtn{background:none;border:none;color:var(--accent2);padding:3px 6px}
 
 #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:16px 14px}
@@ -188,6 +191,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <button data-act="backup">💾 Backup exportieren (JSON)</button>
       <button data-act="restore">♻️ Backup einspielen</button>
       <button data-act="csv">📄 Archiv als CSV exportieren</button>
+      <button data-act="relations">🔗 Reihen &amp; Duplikate finden</button>
       <button data-act="covers">🖼 Cover-Sicherung an/aus</button>
       <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
       <button data-act="help">❓ Anleitung</button>
@@ -707,16 +711,202 @@ function rebuildDatalist(){
   $('#tagList').innerHTML = [...keys].sort().map(k => `<option value="${esc(k)}">`).join('');
 }
 
+/* ---------- Reihen & Duplikate (Titelabgleich) ---------- */
+const Rel = {
+  cache: null, dirty: true,
+  invalidate(){ this.dirty = true; },
+  // Titel ohne [Künstler], (Event), [Sprache], {Gruppe} …
+  baseTitles(g){
+    const raw = [g.title_pretty, g.title_english, g.title_japanese].filter(Boolean);
+    const out = new Set();
+    for (let t of raw) {
+      t = String(t).normalize('NFKC');
+      let prev;
+      do { prev = t;
+        t = t.replace(/^\s*(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】)\s*/, '')
+             .replace(/\s*(\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|【[^】]*】)\s*$/, '');
+      } while (t !== prev);
+      for (const part of t.split(/\s+\|\s+|｜/)) if (part.trim()) out.add(part.trim());
+    }
+    return [...out];
+  },
+  norm(t){ return t.normalize('NFKC').toLowerCase().replace(/[’'`´]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); },
+  // Untertitel abschneiden: "Titel 2 ~Untertitel~", "Titel 2: Untertitel", "Titel 2 - Untertitel"
+  mainPart(t){ return t.replace(/\s*[~〜～].*$/, '').replace(/\s*[:：]\s.*$/, '').replace(/\s+[-–—]\s+.*$/, '').trim() || t; },
+  WORD_NUM: {zenpen:1, zenhen:1, joukan:1, jou:1, 'jō':1, '前編':1, '上':1, '上巻':1, chuuhen:2, chuhen:2, '中編':2, '中':2,
+             kouhen:90, kohen:90, gekan:90, ge:90, '後編':90, '下':90, '下巻':90, kanketsuhen:99, '完結編':99, final:99},   // ≥90 = „letzter Teil“, zählt nicht für fehlende Teile
+  ROMAN: {ii:2, iii:3, iv:4, v:5, vi:6, vii:7, viii:8, ix:9, x:10},
+  MARK: new Set(['vol','volume','ch','chapter','part','pt','ep','episode','act','no','sono','dai','kan','maki','#','その','第','season','book','route']),
+  // → {key, num} ; num = null, wenn keine Nummer erkennbar
+  series(n){
+    const w = n.split(' ');
+    let num = null, m;
+    const last = w[w.length - 1];
+    if (w.length >= 2 && this.WORD_NUM[last] !== undefined) { num = this.WORD_NUM[last]; w.pop(); }
+    else if ((m = last.match(/^(?:第|その|#)?(\d{1,3})(?:[話巻章部回]|st|nd|rd|th)?$/)) && w.length >= 2) { num = +m[1]; w.pop(); }
+    else if (w.length >= 3 && this.ROMAN[last]) { num = this.ROMAN[last]; w.pop(); }
+    else if ((m = last.match(/^(\D{3,}?)(\d{1,2})$/)) && w.length >= 1 && !/\d/.test(m[1])) { num = +m[2]; w[w.length - 1] = m[1]; }
+    // Bereich "3 4" → 3
+    if (num !== null && w.length >= 2 && /^\d{1,3}$/.test(w[w.length - 1])) { num = +w.pop(); }
+    if (num !== null) while (w.length > 1 && this.MARK.has(w[w.length - 1])) w.pop();
+    return {key: w.join(' '), num};
+  },
+  creators(g){ return new Set([...(g.tags.artist||[]), ...(g.tags.group||[])].map(s => s.toLowerCase())); },
+  overlap(a, b){ if (!a.size || !b.size) return true; for (const x of a) if (b.has(x)) return true; return false; },
+  bigrams(s){ s = s.replace(/ /g, ''); const r = new Set(); for (let i = 0; i < s.length - 1; i++) r.add(s.slice(i, i + 2)); return r; },
+  dice(a, b){ if (!a.size || !b.size) return 0; let n = 0; for (const x of a) if (b.has(x)) n++; return 2 * n / (a.size + b.size); },
+  lang(g){ return (g.tags.language||[]).filter(x => !['translated','rewrite','speechless','text cleaned'].includes(x))[0] || '?'; },
+
+  analyze(){
+    if (!this.dirty && this.cache) return this.cache;
+    const info = new Map();
+    for (const g of S.all.values()) {
+      const bases = this.baseTitles(g);
+      const fulls = [...new Set(bases.map(b => this.norm(b)).filter(x => x.length >= 3))];
+      const ser = bases.map(b => ({...this.series(this.norm(this.mainPart(b))), disp:b})).filter(s => s.key.length >= 4);
+      info.set(g.id, {g, fulls, ser, cr:this.creators(g), bg:this.bigrams(fulls[0] || '')});
+    }
+    // Union-Find
+    const mk = () => { const p = new Map(); const f = x => { while (p.has(x) && p.get(x) !== x) { p.set(x, p.get(p.get(x)) ?? p.get(x)); x = p.get(x); } return x; };
+      return {find:f, union:(a,b) => { a = f(a); b = f(b); if (a !== b) p.set(b, a); }, groups(ids){ const m = new Map(); for (const id of ids) { const r = f(id); if (!m.has(r)) m.set(r, []); m.get(r).push(id); } return [...m.values()].filter(x => x.length > 1); }}; };
+
+    // --- Duplikate: gleicher Titel (bei kurzen Titeln + gleiche Künstler) oder sehr ähnlicher Titel bei gleichem Künstler
+    const D = mk(), byFull = new Map(), byCr = new Map();
+    for (const [id, x] of info) {
+      for (const f of x.fulls) { if (!byFull.has(f)) byFull.set(f, []); byFull.get(f).push(id); }
+      for (const c of x.cr) { if (!byCr.has(c)) byCr.set(c, []); byCr.get(c).push(id); }
+    }
+    const sameNum = (a, b) => { const na = a.ser[0]?.num ?? null, nb = b.ser[0]?.num ?? null; return na === nb; };
+    for (const [f, ids] of byFull) for (let i = 1; i < ids.length; i++) {
+      const a = info.get(ids[0]), b = info.get(ids[i]);
+      if (this.overlap(a.cr, b.cr)) D.union(ids[0], ids[i]);   // gleicher Titel + gleicher Künstler (oder einer ohne Künstler-Tag)
+    }
+    for (const ids of byCr.values()) {
+      if (ids.length > 400) continue;
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        const a = info.get(ids[i]), b = info.get(ids[j]);
+        if (D.find(ids[i]) === D.find(ids[j]) || !sameNum(a, b)) continue;
+        if (Math.min(a.fulls[0]?.length || 0, b.fulls[0]?.length || 0) < 8) continue;
+        if (this.dice(a.bg, b.bg) >= 0.9) D.union(ids[i], ids[j]);
+      }
+    }
+    const dupGroups = D.groups([...info.keys()]).map(ids => {
+      const langs = new Set(ids.map(id => this.lang(info.get(id).g)));
+      return {ids, kind: langs.size < ids.length ? 'same' : 'lang', sig: 'd:' + ids.slice().sort().join(',')};
+    });
+    const dupOf = new Map(); dupGroups.forEach(gr => gr.ids.forEach(id => dupOf.set(id, gr)));
+
+    // --- Reihen: gleicher Reihen-Schlüssel, Künstler überschneiden sich, mind. 2 verschiedene Teile
+    const byKey = new Map();
+    for (const [id, x] of info) for (const s of x.ser) { if (!byKey.has(s.key)) byKey.set(s.key, new Map()); byKey.get(s.key).set(id, s); }
+    // Einträge ohne Nummer gehören als "Teil 1" dazu, wenn ihr voller Titel dem Schlüssel entspricht
+    const R = mk(), numOf = new Map(), nameOf = new Map();
+    for (const [key, members] of byKey) {
+      const ids = [...members.keys()];
+      const numbered = ids.filter(id => members.get(id).num !== null);
+      if (!numbered.length && ids.length < 2) continue;
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        const a = info.get(ids[i]), b = info.get(ids[j]);
+        if (!this.overlap(a.cr, b.cr)) continue;
+        const na = members.get(ids[i]).num, nb = members.get(ids[j]).num;
+        if (na === null && nb === null && key.length < 10) continue;   // kurze Titel ohne Nummer: zu unsicher
+        R.union(ids[i], ids[j]);
+      }
+      for (const id of ids) { const s = members.get(id); if (!numOf.has(id) || s.num !== null) numOf.set(id, s.num); if (!nameOf.has(id)) nameOf.set(id, s.disp); }
+    }
+    const seriesGroups = [];
+    for (const ids of R.groups([...info.keys()])) {
+      // nur echte Reihen: mind. 2 verschiedene Werke (nicht nur Duplikate voneinander)
+      const works = new Set(ids.map(id => dupOf.get(id)?.sig || id));
+      if (works.size < 2) continue;
+      const parts = ids.map(id => ({id, num: numOf.get(id) ?? null})).sort((a, b) => (a.num ?? 1) - (b.num ?? 1) || Number(a.id) - Number(b.id));
+      const nums = [...new Set(parts.map(p => p.num ?? 1).filter(n => n < 90))].sort((a, b) => a - b);
+      const missing = []; if (nums.length) for (let n = 1; n < nums[nums.length - 1] && missing.length < 10; n++) if (!nums.includes(n)) missing.push(n);
+      const first = parts[0];
+      const name = String(nameOf.get(first.id) || dispTitle(info.get(first.id).g)).replace(/\s*[~〜～:：].*$/, '')
+        .replace(/[\s\-–—]*(?:vol\.?|volume|ch\.?|chapter|part|pt\.?|ep\.?|episode|no\.?|sono|#)?\s*\d{1,3}(?:\s*[-–]\s*\d{1,3})?\s*$/i, '')
+        .replace(/\s+(?:(?:zen|chuu|chu|kou|ko)(?:pen|hen)|joukan|gekan|kanketsuhen|final)\s*$|\s*[前中後完](?:編|結編)\s*$/i, '').trim();
+      seriesGroups.push({ids: parts.map(p => p.id), parts, name: name || dispTitle(info.get(first.id).g), missing, sig: 's:' + ids.slice().sort().join(',')});
+    }
+    const seriesOf = new Map(); seriesGroups.forEach(gr => gr.ids.forEach(id => seriesOf.set(id, gr)));
+    const ign = new Set(S.meta.relIgnore || []);
+    this.cache = {
+      dups: dupGroups.filter(g => !ign.has(g.sig)).sort((a, b) => b.ids.length - a.ids.length),
+      series: seriesGroups.filter(g => !ign.has(g.sig)).sort((a, b) => b.ids.length - a.ids.length || a.name.localeCompare(b.name)),
+      dupOf, seriesOf, ign
+    };
+    this.dirty = false;
+    return this.cache;
+  }
+};
+
+const partPill = n => n === null ? '' : `<span class="pill" style="padding:0 7px;margin-right:6px">${n >= 90 ? 'Ende' : n}</span>`;
+function relItem(id, extra=''){
+  const g = S.all.get(id); if (!g) return '';
+  return `<div class="rv relitem" data-gopen="${esc(id)}" style="grid-template-columns:44px 1fr"><span class="thumb"><img alt="" data-gid="${esc(id)}"></span>
+    <span><b>${extra}${esc(dispTitle(g))}</b><small>#${esc(id)} · ${esc(Rel.lang(g))} · ${g.pages||'?'} S. · ${esc((g.tags.artist||[]).join(', ') || '–')}${g.status === 'removed' ? ' · entfernt' : ''}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}</small></span></div>`;
+}
+function fillThumbs(root){ root.querySelectorAll('img[data-gid]').forEach(img => { const g = S.all.get(img.dataset.gid); img.loading = 'lazy'; if (g) loadImg(img, 'cover', g); }); }
+
+function showRelations(tab){
+  const A = Rel.analyze(); S.relTab = tab || S.relTab || (A.dups.length ? 'dups' : 'series');
+  const LIMIT = 150, isD = S.relTab === 'dups', list = isD ? A.dups : A.series;
+  const head = `<button class="close icon" data-x>✕</button><h2>🔗 Reihen &amp; Duplikate</h2>
+    <div class="seg" style="max-width:460px;margin-bottom:14px"><button data-reltab="dups" class="${isD ? 'on' : ''}">⧉ Mögliche Duplikate (${A.dups.length})</button><button data-reltab="series" class="${!isD ? 'on' : ''}">📚 Reihen (${A.series.length})</button></div>
+    <p class="muted" style="font-size:13px;margin-top:-4px">${isD
+      ? 'Gleicher oder fast gleicher Titel beim selben Künstler. „Andere Sprache“ ist meist eine Übersetzung desselben Werks, „gleiche Sprache“ eher ein Re-Upload.'
+      : 'Einträge mit gleichem Titel und unterschiedlicher Teil-Nummer (2, Vol. 3, Zenpen/Kouhen …) beim selben Künstler. Fehlende Teile sind markiert.'} Klick auf einen Eintrag öffnet ihn.</p>`;
+  const body = list.length ? list.slice(0, LIMIT).map(gr => isD
+    ? `<div class="rvsec"><div class="rvhead"><b>${gr.kind === 'same' ? '⧉ Gleiche Sprache – evtl. doppelt' : '🌐 Andere Sprache / Version'} (${gr.ids.length})</b><button data-relign="${esc(gr.sig)}">Kein Duplikat</button></div>
+       <div class="rvlist">${gr.ids.map(id => relItem(id)).join('')}</div></div>`
+    : `<div class="rvsec"><div class="rvhead"><b>📚 ${esc(gr.name)} (${gr.ids.length})</b>${gr.missing.length ? `<span class="pill warn" title="In deinen Favoriten nicht gefunden">fehlt: Teil ${gr.missing.join(', ')}</span>` : ''}
+         <button data-rellist="${esc(gr.sig)}">Als Liste anlegen</button><button data-relign="${esc(gr.sig)}">Keine Reihe</button></div>
+       <div class="rvlist">${gr.parts.map(p => relItem(p.id, partPill(p.num))).join('')}</div></div>`).join('')
+    + (list.length > LIMIT ? `<div class="more">… und ${list.length - LIMIT} weitere Gruppen.</div>` : '')
+    : `<p>${isD ? 'Keine möglichen Duplikate gefunden. 🎉' : 'Keine Reihen gefunden.'}</p>`;
+  const ignN = A.ign.size ? `<div class="row foot"><span class="muted" style="font-size:12.5px;margin-right:auto">${A.ign.size} Gruppe(n) ausgeblendet</span><button data-relreset>Wieder einblenden</button></div>` : '';
+  $('#modalBody').innerHTML = head + body + ignN;
+  fillThumbs($('#modalBody'));
+  if (S.modal !== 'rel') showModal('rel'); 
+}
+function onRelClick(e){
+  let el;
+  if ((el = e.target.closest('[data-reltab]'))) return showRelations(el.dataset.reltab);
+  if ((el = e.target.closest('[data-relign]'))) {
+    S.meta.relIgnore = [...new Set([...(S.meta.relIgnore||[]), el.dataset.relign])]; saveMeta(); Rel.invalidate();
+    const y = $('#modal').scrollTop; showRelations(); $('#modal').scrollTop = y; return;
+  }
+  if (e.target.closest('[data-relreset]')) { S.meta.relIgnore = []; saveMeta(); Rel.invalidate(); return showRelations(); }
+  if ((el = e.target.closest('[data-rellist]'))) {
+    const gr = Rel.analyze().series.find(x => x.sig === el.dataset.rellist); if (!gr) return;
+    let name = prompt('Name der Liste:', gr.name); if (!name || !(name = name.trim())) return;
+    if (!S.meta.lists.includes(name)) S.meta.lists.push(name);
+    const ch = [];
+    for (const id of gr.ids) { const g = S.all.get(id); if (g && !g.user.lists.includes(name)) { g.user.lists.push(name); hayCache.delete(g); ch.push(g); } }
+    saveMeta(); quiet(DB.put(ch)); renderLists(); toast(`✓ Liste „${name}“ mit ${gr.ids.length} Einträgen angelegt`); return;
+  }
+  if ((el = e.target.closest('[data-gopen]'))) { S.relBack = true; return openDetail(el.dataset.gopen); }
+}
+// Block im Detailfenster
+function relBlock(g){
+  const A = Rel.analyze(), d = A.dupOf.get(g.id), s = A.seriesOf.get(g.id), out = [];
+  if (d && !A.ign.has(d.sig)) out.push(`<div><div class="lbl">⧉ ${d.kind === 'same' ? 'Mögliche Duplikate' : 'Andere Versionen / Sprachen'}</div>${d.ids.filter(id => id !== g.id).map(id => relItem(id)).join('')}</div>`);
+  if (s && !A.ign.has(s.sig)) out.push(`<div><div class="lbl">📚 Reihe „${esc(s.name)}“ – ${s.ids.length} Teile${s.missing.length ? ` · <span style="color:var(--warn)">fehlt: Teil ${s.missing.join(', ')}</span>` : ''}</div>${s.parts.map(p => p.id === g.id
+      ? `<div class="rv" style="grid-template-columns:1fr;cursor:default;opacity:.6"><small>▶ ${p.num !== null ? 'Teil ' + (p.num >= 90 ? 'Ende' : p.num) + ' – ' : ''}dieser Eintrag</small></div>`
+      : relItem(p.id, partPill(p.num))).join('')}</div>`);
+  return out.length ? `<div class="personal relbox">${out.join('')}</div>` : '';
+}
+
 /* ---------- Modal ---------- */
 function showModal(kind){ S.modal = kind; $('#modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; $('#modal').scrollTop = 0; }
-function closeModal(){ if (S.sync) S.sync.abort = true; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal(){ if (S.sync) S.sync.abort = true; S.relBack = false; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
 
 function openDetail(id){
   const g = S.all.get(id); if (!g) return;
   S.detailId = id;
   const u = g.user, resume = u.last_page > 1 && !u.read;
   const tags = TAG_TYPES.filter(t => (g.tags[t]||[]).length).map(t => `<div class="l">${TYPE_LABEL[t]}</div><div class="v">${g.tags[t].map(n => `<span class="chip" data-tag="${esc(t)}" data-name="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen">${esc(n)}</span>`).join('')}</div>`).join('');
-  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>${S.relBack ? '<button class="linkbtn" data-relback style="margin:-6px 0 8px -6px">‹ Zurück zu Reihen &amp; Duplikaten</button>' : ''}
   <div class="detail">
     <div>
       <div class="dcover"><img alt=""></div>
@@ -732,6 +922,7 @@ function openDetail(id){
       ${g.status === 'removed' ? `<div class="warnbox">Nicht mehr in deinen nhentai-Favoriten (seit ${fmtTs(g.removed_at)}) – bleibt aber in deinem Archiv.<br><button data-reactivate>Kennzeichnung aufheben</button><button data-delete class="danger">Aus Archiv löschen</button></div>` : ''}
       <div class="meta"><a href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer">#${esc(g.id)} auf nhentai ↗</a><span>${g.pages||'?'} Seiten</span><span>Upload: ${fmtDate(g.upload_date)}</span><span>Im Archiv seit ${fmtTs(g.added_at)}</span></div>
       <div class="tg">${tags || '<div class="muted">Keine Tags</div>'}</div>
+      ${relBlock(g)}
       <div class="personal">
         <div class="row"><span class="lbl" style="margin:0 6px 0 0">Bewertung</span>
           <div class="stars">${[1,2,3,4,5].map(i => `<span data-star="${i}" class="${i <= (u.rating||0) ? 'on' : ''}">★</span>`).join('')}</div>
@@ -746,6 +937,7 @@ function openDetail(id){
     </div>
   </div>`;
   loadImg($('#modalBody .dcover img'), 'big', g);
+  fillThumbs($('#modalBody .relbox') || document.createElement('div'));
   if (S.modal !== 'detail') showModal('detail'); else $('#modal').scrollTop = 0;
 }
 function navDetail(d){
@@ -759,6 +951,8 @@ function onModalClick(e){
   if (S.modal === 'detail') {
     const g = S.all.get(S.detailId); if (!g) return;
     let el;
+    if (t.closest('[data-relback]')) { S.relBack = false; return showRelations(); }
+    if ((el = t.closest('[data-gopen]'))) return openDetail(el.dataset.gopen);
     if ((el = t.closest('[data-read]'))) return openReader(g.id, +el.dataset.read);
     if ((el = t.closest('[data-nav]'))) return navDetail(+el.dataset.nav);
     if ((el = t.closest('[data-tag]'))) { closeModal(); return addChip(el.dataset.tag, el.dataset.name, e.shiftKey ? 'exc' : 'inc'); }
@@ -770,11 +964,12 @@ function onModalClick(e){
     if (t.closest('[data-reactivate]')) { g.status = 'active'; delete g.removed_at; quiet(DB.put([g])); render(); return openDetail(g.id); }
     if (t.closest('[data-delete]')) {
       if (!confirm('Diesen Eintrag endgültig aus dem Archiv löschen? (Bewertung, Notizen und Listen gehen verloren)')) return;
-      quiet(DB.del([g.id])); Covers.remove([g.id]); S.all.delete(g.id); closeModal(); render(); toast('Gelöscht'); return;
+      quiet(DB.del([g.id])); Covers.remove([g.id]); S.all.delete(g.id); Rel.invalidate(); closeModal(); render(); toast('Gelöscht'); return;
     }
   }
   if (S.modal === 'review') onReviewClick(e);
   if (S.modal === 'key' || S.modal === 'sync') onSyncClick(e);
+  if (S.modal === 'rel') onRelClick(e);
 }
 function onModalChange(e){
   const t = e.target;
@@ -1050,7 +1245,7 @@ async function applyReview(){
   } catch (err) { alert('Speichern fehlgeschlagen: ' + err); return; }
   for (const [id,r] of put) S.all.set(id, r);
   for (const id of del) S.all.delete(id);
-  S.meta.lastImport = now; saveMeta();
+  S.meta.lastImport = now; saveMeta(); Rel.invalidate();
   closeModal(); rebuildDatalist(); render();
   const parts = [];
   if (newRecs.length) parts.push(`${newRecs.length} neu`);
@@ -1200,6 +1395,7 @@ function detailIntoImport(neu, d){
   if (pp.length) { neu.page_paths = pp; neu.pages = pp.length; }
 }
 function applyDetail(g, d){
+  Rel.invalidate();
   const tags = tagsFromDetail(d);
   if (d.media_id) g.media_id = String(d.media_id);
   if (d.title?.pretty) g.title_pretty = d.title.pretty;
@@ -1248,7 +1444,7 @@ async function restoreBackup(d){
   catch { toast('Backup NICHT eingespielt – dein bisheriges Archiv ist unverändert.', 6000); return; }
   S.meta = meta;
   S.all = new Map(list.map(g => [g.id, g]));
-  rebuildDatalist(); render(); toast(`✓ Backup eingespielt (${list.length} Einträge)`);
+  Rel.invalidate(); rebuildDatalist(); render(); toast(`✓ Backup eingespielt (${list.length} Einträge)`);
 }
 function exportCSV(){
   const cols = ['id','url','cover','title_english','title_japanese','title_pretty','parodies','characters','tags','artists','groups','languages','categories','pages','uploaded_date','status','rating','read','lists','notes'];
@@ -1280,6 +1476,7 @@ function showHelp(){
     <li><b>Filter-Chips</b>: Klick wechselt zwischen einschließen (grün) und ausschließen (rot). Shift+Klick auf einen Tag schließt direkt aus.</li>
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
+    <li><b>Reihen &amp; Duplikate</b> (Menü ⋯): gleicht die Titel ab und findet Teile derselben Reihe (inkl. fehlender Teile) sowie doppelte Einträge bzw. andere Sprachversionen. Im Detailfenster stehen verwandte Einträge direkt unter den Tags.</li>
     <li><b>Cover-Sicherung</b>: Cover werden im Hintergrund lokal gespeichert und bleiben sichtbar, auch wenn eine Galerie auf nhentai gelöscht wird. Sie sind <i>nicht</i> im JSON-Backup enthalten.</li>
     <li><b>Backup</b> (Menü ⋯): Exportiert alles inkl. Bewertungen, Notizen, Listen – damit kannst du auch auf ein anderes Gerät umziehen.</li>
   </ul>
@@ -1314,6 +1511,7 @@ function bind(){
     if (a === 'restore') $('#fileRestore').click();
     if (a === 'csv') exportCSV();
     if (a === 'help') showHelp();
+    if (a === 'relations') showRelations();
     if (a === 'covers') {
       const on = !Covers.enabled(); ls.set('covercache', on);
       if (on) { Covers.stopped = false; Covers.enqueueMissing(); toast('Cover-Sicherung an – läuft im Hintergrund.'); }
@@ -1330,7 +1528,7 @@ function bind(){
       if (!confirm('Letzte Warnung. Vorher ein Backup gemacht?')) return;
       try { await DB.clear(); } catch { return; }
       await Covers.clearAll();
-      S.all.clear(); S.meta = {lists:[]}; saveMeta(); rebuildDatalist(); render(); toast('Archiv gelöscht');
+      S.all.clear(); Rel.invalidate(); S.meta = {lists:[]}; saveMeta(); rebuildDatalist(); render(); toast('Archiv gelöscht');
     }
   };
 
