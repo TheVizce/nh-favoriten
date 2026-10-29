@@ -101,6 +101,34 @@ main{padding:14px 16px 60px;min-width:0}
 #bulk button,#bulk select{padding:5px 10px;font-size:13px}
 .facet .ren{opacity:0;color:var(--muted);padding:0 4px}
 .chin{width:74px;padding:3px 7px;font-size:12.5px}
+.stiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:18px}
+.stile{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stile .sk{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stile .sn{font-size:26px;font-weight:800;margin:2px 0;font-variant-numeric:tabular-nums}
+.stile .ss{font-size:12.5px;color:var(--muted)}
+.stile .sp{height:4px;border-radius:2px;background:var(--line);margin:4px 0 6px;overflow:hidden}
+.stile .sp span{display:block;height:100%;background:var(--accent);border-radius:2px}
+.ssec{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px;min-width:0}
+.ssec h3{margin:0 0 10px;font-size:15px}
+.shead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.shead h3{margin:0}
+.sgrid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.sbars{display:grid;gap:5px}
+.sbar{display:grid;grid-template-columns:minmax(90px,170px) 1fr auto;gap:10px;align-items:center;font-size:13px;padding:2px 4px;border-radius:6px}
+.sbar.click{cursor:pointer}
+.sbar.click:hover{background:rgba(255,255,255,.05)}
+.sbar .sl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sbar .st{height:10px;background:rgba(255,255,255,.04);border-radius:3px;overflow:hidden}
+.sbar .sf{display:block;height:100%;background:var(--accent);border-radius:0 4px 4px 0}
+.sbar .sv{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.sbar .sv small{color:var(--muted);margin-left:2px}
+.scols{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:16px}
+.scol{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}
+.scol .scb{width:100%;max-width:38px;background:var(--accent);border-radius:4px 4px 0 0;min-height:1px}
+.scol:hover .scb{background:var(--accent2)}
+.scol .scv{font-size:10.5px;color:var(--muted);margin-bottom:2px;font-variant-numeric:tabular-nums}
+.scol .scl{font-size:10.5px;color:var(--muted);margin-top:4px;white-space:nowrap}
+@media (max-width:820px){.sgrid2{grid-template-columns:1fr}.sbar{grid-template-columns:90px 1fr auto}.sbar .sv small{display:none}}
 .sggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-bottom:6px}
 .sgbtn{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;text-align:left;padding:10px 12px;border-radius:10px}
 .sgbtn .ic{grid-row:1/3;font-size:22px;align-self:center}
@@ -234,6 +262,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <button data-act="restore">♻️ Backup einspielen</button>
       <button data-act="csv">📄 Archiv als CSV exportieren</button>
       <button data-act="delremoved">🗑 Alle entfernten Einträge löschen</button>
+      <button data-act="stats">📊 Statistiken</button>
       <button data-act="relations">🔗 Reihen &amp; Duplikate finden</button>
       <button data-act="covers">🖼 Cover-Sicherung an/aus</button>
       <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
@@ -295,6 +324,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <div id="facets"></div>
     </section>
     <div class="stat" id="stat"></div>
+    <button class="linkbtn" id="statMore" style="padding:4px 0;font-size:12.5px">📊 Mehr Statistiken ›</button>
     <div class="stat" id="storageInfo" style="border:none;padding-top:4px"></div>
     <div class="stat" id="coverProg" style="border:none;padding-top:4px"></div>
     <div class="stat" id="detailProg" style="border:none;padding-top:4px"></div>
@@ -1463,6 +1493,124 @@ function onSuggestClick(e){
   if ((el = e.target.closest('[data-sgopen]'))) { S.sugBack = true; return openDetail(el.dataset.sgopen); }
 }
 
+/* ---------- Statistiken ---------- */
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const nf = n => Number(n).toLocaleString('de-DE');
+function statBars(rows, opt = {}){
+  // rows: [{label, value, sub, title, act}] – einfache horizontale Balken, eine Farbe (Größe), Wert direkt beschriftet
+  const max = Math.max(1, ...rows.map(r => r.value));
+  return `<div class="sbars">${rows.map(r => `<div class="sbar ${r.act ? 'click' : ''}" ${r.act ? `data-stfilter="${esc(r.act)}"` : ''} title="${esc(r.title || `${r.label}: ${nf(r.value)}`)}">
+    <span class="sl">${esc(r.label)}</span><span class="st"><span class="sf" style="width:${Math.max(0.5, r.value / max * 100)}%${r.color ? ';background:' + r.color : ''}"></span></span>
+    <span class="sv">${nf(r.value)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span></div>`).join('')}</div>`;
+}
+function statCols(rows){
+  // vertikale Säulen (z. B. Upload-Jahre), Hover zeigt Wert
+  const max = Math.max(1, ...rows.map(r => r.value));
+  return `<div class="scols">${rows.map(r => `<div class="scol" title="${esc(r.label)}: ${nf(r.value)}"><span class="scv">${r.value ? nf(r.value) : ''}</span><span class="scb" style="height:${r.value / max * 100}%"></span><span class="scl">${esc(r.label)}</span></div>`).join('')}</div>`;
+}
+function showStats(){
+  if (!S.statType) S.statType = 'tag';
+  if (!S.statSort) S.statSort = 'count';
+  const onlyView = ls.get('stView', false);
+  const all = (onlyView ? S.view : [...S.all.values()]);
+  const act = all.filter(g => g.status === 'active'), N = all.length;
+  const read = all.filter(g => g.user.read), started = all.filter(g => !g.user.read && (g.user.last_page || 0) > 1);
+  const rated = all.filter(g => g.user.rating), avgR = rated.length ? rated.reduce((s, g) => s + g.user.rating, 0) / rated.length : 0;
+  const pages = all.reduce((s, g) => s + (g.pages || 0), 0), pagesRead = read.reduce((s, g) => s + (g.pages || 0), 0)
+    + started.reduce((s, g) => s + Math.min(g.user.last_page || 0, g.pages || 0), 0);
+  const covered = all.filter(g => Covers.has(g.id)).length;
+  const A = Rel.analyze();
+  const tiles = [
+    ['Einträge', nf(N), `${nf(act.length)} Favoriten · ${nf(N - act.length)} entfernt`],
+    ['Gelesen', pct(read.length, N) + ' %', `${nf(read.length)} von ${nf(N)} · ${nf(started.length)} angefangen`, pct(read.length, N)],
+    ['Seiten gelesen', pct(pagesRead, pages) + ' %', `${nf(pagesRead)} von ${nf(pages)} Seiten`, pct(pagesRead, pages)],
+    ['Ø Seiten', N ? nf(Math.round(pages / N)) : '–', `längstes: ${nf(Math.max(0, ...all.map(g => g.pages || 0)))} S.`],
+    ['Bewertet', nf(rated.length), rated.length ? `Ø ${avgR.toFixed(1).replace('.', ',')} ★` : 'noch keine Bewertung'],
+    ['Listen', nf(S.meta.lists.length), `${S.meta.lists.filter(isSeriesList).length} davon Reihen`],
+    ['Reihen erkannt', nf(A.series.length), `${nf(A.dups.length)} mögliche Duplikat-Gruppen`],
+    ['Cover gesichert', pct(covered, N) + ' %', `${nf(covered)} von ${nf(N)}`, pct(covered, N)]
+  ];
+
+  // Tags & Co.: Anzahl, Lesequote, Ø Bewertung
+  const t = S.statType, m = new Map();
+  for (const g of all) for (const n of (g.tags[t] || [])) {
+    const x = m.get(n) || {n, c:0, r:0, rs:0, rc:0}; x.c++; if (g.user.read) x.r++; if (g.user.rating) { x.rs += g.user.rating; x.rc++; } m.set(n, x);
+  }
+  let tagRows = [...m.values()];
+  if (S.statSort === 'rating') tagRows = tagRows.filter(x => x.rc >= 2).sort((a, b) => b.rs / b.rc - a.rs / a.rc || b.rc - a.rc);
+  else if (S.statSort === 'unread') tagRows.sort((a, b) => (b.c - b.r) - (a.c - a.r));
+  else tagRows.sort((a, b) => b.c - a.c);
+  const shown = tagRows.slice(0, S.statAll ? 200 : 25);
+  const tagBars = statBars(shown.map(x => ({
+    label: x.n,
+    value: S.statSort === 'unread' ? x.c - x.r : x.c,
+    sub: ` · ${pct(x.r, x.c)} % gelesen${x.rc ? ` · Ø ${(x.rs / x.rc).toFixed(1).replace('.', ',')}★ (${x.rc})` : ''}`,
+    title: `${x.n}: ${x.c} Einträge, ${x.r} gelesen${x.rc ? `, Ø ${(x.rs / x.rc).toFixed(2)} ★ aus ${x.rc} Bewertungen` : ''} – Klick filtert`,
+    act: t + '\u0001' + x.n
+  })));
+
+  // Bewertungen
+  const rDist = [5,4,3,2,1].map(r => ({label:'★'.repeat(r), value: all.filter(g => g.user.rating === r).length}));
+  rDist.push({label:'unbewertet', value: N - rated.length});
+  // Seitenzahl
+  const buckets = [[1,10],[11,20],[21,30],[31,50],[51,100],[101,200],[201,1e9]];
+  const pDist = buckets.map(([a, b]) => ({label: b > 1e8 ? `> ${a - 1}` : `${a}–${b}`, value: all.filter(g => (g.pages || 0) >= a && (g.pages || 0) <= b).length}));
+  // Upload-Jahre
+  const years = new Map(); for (const g of all) { const y = (g.upload_date || '').slice(0, 4); if (y) years.set(y, (years.get(y) || 0) + 1); }
+  const ys = [...years.keys()].sort(); const yRows = [];
+  if (ys.length) for (let y = +ys[0]; y <= +ys[ys.length - 1]; y++) yRows.push({label: "'" + String(y).slice(2), value: years.get(String(y)) || 0});
+  const noDate = all.filter(g => !g.upload_date).length;
+  // Lesen in den letzten 12 Monaten (letzter Lesezeitpunkt je Werk)
+  const now = new Date(), mon = [];
+  for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); mon.push({k: d.getFullYear() * 12 + d.getMonth(), label: d.toLocaleDateString('de-DE', {month:'short'}).replace('.', ''), value:0}); }
+  for (const g of all) if (g.user.last_read_at) { const d = new Date(g.user.last_read_at), k = d.getFullYear() * 12 + d.getMonth(); const x = mon.find(m => m.k === k); if (x) x.value++; }
+  // Listen
+  const lRows = S.meta.lists.map(l => { const ids = all.filter(g => g.user.lists.includes(l)); return {l, n: ids.length, r: ids.filter(g => g.user.read).length}; })
+    .filter(x => x.n).sort((a, b) => b.n - a.n);
+  // Neu im Archiv (letzte 12 Monate, nach added_at)
+  const addMon = mon.map(x => ({...x, value:0}));
+  for (const g of all) if (g.added_at) { const d = new Date(g.added_at), k = d.getFullYear() * 12 + d.getMonth(); const x = addMon.find(m => m.k === k); if (x) x.value++; }
+
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>📊 Statistiken</h2>
+    <label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="stView" ${onlyView ? 'checked' : ''}> Nur die aktuelle Ansicht auswerten (Filter/Liste/Suche – ${nf(S.view.length)} Einträge)</label>
+    <div class="stiles">${tiles.map(([k, v, s, p]) => `<div class="stile"><div class="sk">${k}</div><div class="sn">${v}</div>${p !== undefined ? `<div class="sp"><span style="width:${p}%"></span></div>` : ''}<div class="ss">${s}</div></div>`).join('')}</div>
+
+    <div class="ssec"><div class="shead"><h3>Häufigste ${esc(TYPE_LABEL[t])}</h3>
+      <div class="row" style="gap:6px"><select id="stType">${TAG_TYPES.map(x => `<option value="${x}" ${x === t ? 'selected' : ''}>${TYPE_LABEL[x]}</option>`).join('')}</select>
+      <select id="stSort"><option value="count" ${S.statSort === 'count' ? 'selected' : ''}>nach Anzahl</option><option value="unread" ${S.statSort === 'unread' ? 'selected' : ''}>nach Ungelesenen</option><option value="rating" ${S.statSort === 'rating' ? 'selected' : ''}>nach Ø Bewertung (ab 2)</option></select></div></div>
+      ${shown.length ? tagBars : '<p class="muted">Keine Daten.</p>'}
+      <div class="row" style="justify-content:space-between;margin-top:6px"><span class="muted" style="font-size:12.5px">${nf(m.size)} verschiedene ${esc(TYPE_LABEL[t])} · Klick auf eine Zeile filtert die Übersicht</span>
+      ${tagRows.length > 25 ? `<button class="linkbtn" data-stall>${S.statAll ? 'Weniger zeigen' : `Alle ${Math.min(200, tagRows.length)} zeigen`}</button>` : ''}</div></div>
+
+    <div class="sgrid2">
+      <div class="ssec"><h3>Bewertungen</h3>${statBars(rDist)}</div>
+      <div class="ssec"><h3>Seitenzahl</h3>${statBars(pDist)}</div>
+    </div>
+    <div class="ssec"><h3>Upload-Jahr <span class="muted" style="font-weight:400;font-size:12.5px">(auf nhentai)${noDate ? ` · ${nf(noDate)} ohne Datum – „Fehlende Details nachladen“ ergänzt es` : ''}</span></h3>${yRows.length ? statCols(yRows) : '<p class="muted">Noch keine Upload-Daten.</p>'}</div>
+    <div class="sgrid2">
+      <div class="ssec"><h3>Gelesen – letzte 12 Monate <span class="muted" style="font-weight:400;font-size:12.5px">(zuletzt gelesen je Werk)</span></h3>${mon.some(x => x.value) ? statCols(mon) : '<p class="muted">Noch keine Lesedaten – wird ab jetzt im Reader erfasst.</p>'}</div>
+      <div class="ssec"><h3>Neu im Archiv – letzte 12 Monate</h3>${addMon.some(x => x.value) ? statCols(addMon) : '<p class="muted">Keine neuen Einträge in diesem Zeitraum.</p>'}</div>
+    </div>
+    ${lRows.length ? `<div class="ssec"><h3>Eigene Listen</h3>${statBars(lRows.slice(0, 30).map(x => ({label: listLabel(x.l), value: x.n, sub: ` · ${pct(x.r, x.n)} % gelesen${isSeriesList(x.l) ? ' · Reihe' : ''}`, act: '\u0002' + x.l})))}</div>` : ''}`;
+  if (S.modal !== 'stats') showModal('stats');
+}
+function onStatsClick(e){
+  let el;
+  if (e.target.closest('[data-stall]')) { S.statAll = !S.statAll; const y = $('#modal').scrollTop; showStats(); $('#modal').scrollTop = y; return; }
+  if ((el = e.target.closest('[data-stfilter]'))) {
+    const v = el.dataset.stfilter; closeModal();
+    if (v[0] === '\u0002') { S.f.list = v.slice(1); return render(); }
+    const [type, name] = v.split('\u0001'); return addChip(type, name);
+  }
+}
+function onStatsChange(e){
+  const t = e.target, y = $('#modal').scrollTop;
+  if (t.id === 'stView') ls.set('stView', t.checked);
+  if (t.id === 'stType') { S.statType = t.value; S.statAll = false; }
+  if (t.id === 'stSort') S.statSort = t.value;
+  showStats(); $('#modal').scrollTop = y;
+}
+
 /* ---------- Modal ---------- */
 function showModal(kind){ S.modal = kind; $('#modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; $('#modal').scrollTop = 0; }
 function closeModal(){ if (S.sync) S.sync.abort = true; S.relBack = false; S.listBack = null; S.sugBack = false; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
@@ -1543,10 +1691,12 @@ function onModalClick(e){
   if (S.modal === 'rel') onRelClick(e);
   if (S.modal === 'listedit') onListEditClick(e);
   if (S.modal === 'suggest') onSuggestClick(e);
+  if (S.modal === 'stats') onStatsClick(e);
   if (S.modal === 'listname' && t.closest('[data-lnsave]')) return saveListName();
   if (t.closest('[data-renlist]') && S.modal === 'listedit') return showListNameDialog(t.closest('[data-renlist]').dataset.renlist);
 }
 function onModalChange(e){
+  if (S.modal === 'stats') return onStatsChange(e);
   if (S.modal === 'suggest' && (e.target.id === 'sgView' || e.target.id === 'sgRemoved')) { ls.set(e.target.id, e.target.checked); Sug.shown.clear(); return renderSuggestion(); }
   if (S.modal === 'listedit' && e.target.matches('[data-lseries]')) { setSeriesList(S.editList, e.target.checked); return; }
   if (S.modal === 'listedit' && e.target.matches('[data-lch]')) {
@@ -2091,6 +2241,7 @@ function showHelp(){
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
     <li><b>🏷 Markieren</b>: Im Detailfenster oder in „Reihen &amp; Duplikate“ Einträge markieren (z. B. Duplikate, die du auf nhentai entfernst). Unter 🔄 Sync → „Markierte prüfen“ wird dann nur für diese nachgefragt.</li>
+    <li><b>📊 Statistiken</b> (Menü ⋯ oder unten in der Seitenleiste): Lesequote, Bewertungen, häufigste Tags/Künstler mit Lesequote und Ø Bewertung, Seitenzahlen, Upload-Jahre, Lese-Aktivität, Listen. Optional nur für die aktuelle Ansicht.</li>
     <li><b>✨ Vorschlag</b> (oben oder Taste Z): zufällig (ungelesen), in Reihe weiterlesen, angefangene, passend zu deinen Lieblingen, mehr vom Künstler, nochmal lesen. Werke, deren Vorgänger in einer Reihe du noch nicht gelesen hast, werden bei Zufallsvorschlägen übersprungen.</li>
     <li><b>Reihen &amp; Duplikate</b> (Menü ⋯): gleicht die Titel ab und findet Teile derselben Reihe (inkl. fehlender Teile) sowie doppelte Einträge bzw. andere Sprachversionen. Im Detailfenster stehen verwandte Einträge direkt unter den Tags.</li>
     <li><b>Cover-Sicherung</b>: Cover werden im Hintergrund lokal gespeichert und bleiben sichtbar, auch wenn eine Galerie auf nhentai gelöscht wird. Sie sind <i>nicht</i> im JSON-Backup enthalten.</li>
@@ -2104,6 +2255,7 @@ function showHelp(){
 function bind(){
   $('#btnSync').onclick = $('#emptySync').onclick = showSyncDialog;
   $('#btnSuggest').onclick = () => showSuggest();
+  $('#statMore').onclick = showStats;
   $('#emptyImport').onclick = () => $('#fileImport').click();
   $('#emptyHelp').onclick = showHelp;
   $('#fileImport').onchange = e => { handleFiles([...e.target.files]); e.target.value = ''; };
@@ -2129,6 +2281,7 @@ function bind(){
     if (a === 'csv') exportCSV();
     if (a === 'help') showHelp();
     if (a === 'relations') showRelations();
+    if (a === 'stats') showStats();
     if (a === 'delremoved') deleteRemoved();
     if (a === 'covers') {
       const on = !Covers.enabled(); ls.set('covercache', on);
