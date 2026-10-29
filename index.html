@@ -101,6 +101,15 @@ main{padding:14px 16px 60px;min-width:0}
 #bulk button,#bulk select{padding:5px 10px;font-size:13px}
 .facet .ren{opacity:0;color:var(--muted);padding:0 4px}
 .chin{width:74px;padding:3px 7px;font-size:12.5px}
+.sggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-bottom:6px}
+.sgbtn{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;text-align:left;padding:10px 12px;border-radius:10px}
+.sgbtn .ic{grid-row:1/3;font-size:22px;align-self:center}
+.sgbtn small{color:var(--muted);font-size:12px;line-height:1.3}
+.sgbtn.on{border-color:var(--accent);background:rgba(237,37,83,.14)}
+.sgcard{display:grid;grid-template-columns:170px 1fr;gap:18px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+.sgcard .dcover{max-width:170px}
+.sgwhy{color:var(--accent2);font-size:13px;font-weight:600}
+@media (max-width:820px){.sgcard{grid-template-columns:110px 1fr;gap:12px}.sggrid{grid-template-columns:1fr 1fr}}
 aside h3 select{max-width:90px}
 .facet:hover .ren{opacity:1}
 .cover{position:relative;aspect-ratio:7/10;border-radius:var(--r);overflow:hidden;background:var(--panel2)}
@@ -213,6 +222,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
   <button id="btnSide" class="icon only-mobile" title="Filter">☰</button>
   <div class="brand">Favoriten<span>Archiv</span></div>
   <div class="searchwrap"><input id="q" list="tagList" placeholder="Suchen: Titel, Tag, Künstler, ID, Notiz …   ( / )" autocomplete="off" spellcheck="false"><datalist id="tagList"></datalist></div>
+  <button id="btnSuggest" title="Vorschlag: Was lese ich als Nächstes? (Taste Z)">✨<span class="hide-mobile"> Vorschlag</span></button>
   <button id="btnSync" class="primary">🔄<span class="hide-mobile"> Sync</span></button>
   <div class="menu">
     <button id="btnMenu" class="icon" title="Menü">⋯</button>
@@ -789,6 +799,7 @@ function showListNameDialog(l){
     <label class="lbl" for="lnEn">Name (Englisch / Hauptname)</label><input id="lnEn" value="${esc(l)}" style="width:100%;margin-bottom:12px">
     <label class="lbl" for="lnJa">Name (Japanisch, optional)</label><input id="lnJa" value="${esc(S.meta.listInfo?.[l]?.ja || '')}" placeholder="z. B. 先輩とのひみつ" style="width:100%">
     <p class="muted" style="font-size:12.5px">Über den Knopf „EN/JP“ in der Seitenleiste schaltest du um, welcher Name angezeigt wird. Gesucht wird in beiden.</p>
+    <label class="check"><input type="checkbox" id="lnSeries" ${isSeriesList(l) ? 'checked' : ''}> 📚 Diese Liste ist eine Reihe <span class="muted" style="font-size:12.5px">– Vorschläge halten die Reihenfolge ein (erst Vorgänger lesen)</span></label>
     <div class="row foot"><button data-x>Abbrechen</button><button class="primary" data-lnsave>Speichern</button></div>`;
   showModal('listname'); setTimeout(() => $('#lnEn')?.select(), 30);
 }
@@ -797,7 +808,7 @@ function saveListName(){
   if (!en) return toast('Der Hauptname darf nicht leer sein.');
   let key = old;
   if (en !== old) { if (!renameList(old, en)) return; key = en; }
-  setListJa(key, ja); saveMeta(); closeModal(); render();
+  setListJa(key, ja); setSeriesList(key, $('#lnSeries').checked); saveMeta(); closeModal(); render();
 }
 
 /* ---------- Eigene Listen: Reihenfolge & Platzhalter ---------- */
@@ -874,6 +885,7 @@ function renderListEditor(){
   }).join('');
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>📋 Liste „${esc(listLabel(name))}“ ordnen <button class="linkbtn" data-renlist="${esc(name)}" style="font-size:13px;font-weight:400">✎ Namen</button></h2>
     ${listAlt(name) ? `<div class="jp">${esc(listAlt(name))}</div>` : ''}
+    <label class="check" style="margin:-4px 0 10px"><input type="checkbox" data-lseries ${isSeriesList(name) ? 'checked' : ''}> 📚 Ist eine Reihe (Vorschläge halten die Reihenfolge ein)</label>
     <p class="muted" style="font-size:13px;margin-top:-6px">Ziehen oder ↑↓ zum Verschieben. Platzhalter (⬚) markieren fehlende Kapitel – z. B. „Ch. 3“. Im Feld „Ch.“ trägst du ein, welche Kapitel ein Eintrag umfasst (z. B. „1-3“) – das berücksichtigen auch Sortieren und Lücken-Füllen. Änderungen werden sofort gespeichert.</p>
     <div class="row" style="margin-bottom:12px"><button data-lsort>🔢 Nach Teil-Nummer sortieren</button><button data-lgaps>⬚ Lücken mit Platzhaltern füllen</button><button data-lphend>+ Platzhalter am Ende</button>
       <button data-lfilter style="margin-left:auto">In der Übersicht anzeigen</button></div>
@@ -1238,7 +1250,7 @@ function onRelClick(e){
     const ch = [];
     for (const id of gr.ids) { const g = S.all.get(id); if (g && !g.user.lists.includes(name)) { g.user.lists.push(name); hayCache.delete(g); ch.push(g); } }
     if (!el.dataset.target) {
-      saveOrder(name, fillGaps(gr.parts.map(p => ({id:p.id}))));
+      saveOrder(name, fillGaps(gr.parts.map(p => ({id:p.id})))); setSeriesList(name, true);
       if (!S.meta.listInfo?.[name]?.ja) {   // japanischen Reihentitel aus "Japanisch | Englisch" übernehmen
         const jt = Rel.baseTitles(S.all.get(gr.parts[0].id)).find(hasJa);
         const ja = jt && Rel.mainPart(jt).replace(/[\s\-–—]*(?:第\s*\d+\s*[話巻章部回]|その\s*\d+|\d{1,3}(?:\s*[-–~]\s*\d{1,3})?|[前中後]編|[上下]巻?)\s*$/, '').trim();
@@ -1278,16 +1290,189 @@ function relBlock(g){
   return out.length ? `<div class="personal relbox">${out.join('')}</div>` : '';
 }
 
+/* ---------- Vorschläge: Was lese ich als Nächstes? ---------- */
+// Reihen-Listen: Flag in S.meta.listInfo[l].series. Ohne Angabe wird geraten (Platzhalter, Kapitel oder überwiegend nummerierte Titel).
+function isSeriesList(l){
+  const f = S.meta.listInfo?.[l]?.series;
+  if (typeof f === 'boolean') return f;
+  const items = orderedList(l), ids = items.filter(it => it.id);
+  if (!ids.length) return false;
+  if (items.some(it => it.ph || it.ch)) return true;
+  return ids.filter(it => Rel.numOf(S.all.get(it.id)) !== null).length >= Math.max(2, ids.length * 0.6);
+}
+function setSeriesList(l, on){ S.meta.listInfo = S.meta.listInfo || {}; S.meta.listInfo[l] = {...(S.meta.listInfo[l] || {}), series: on}; saveMeta(); }
+
+const Sug = {
+  shown: new Map(),   // Modus → schon gezeigte IDs (damit "Anderer Vorschlag" nicht wiederholt)
+  lc: new Map(),      // Zwischenspeicher pro Berechnung: Liste → {series, ids}
+  begin(){ this.lc = new Map(); },
+  listCtx(l){
+    if (!this.lc.has(l)) this.lc.set(l, {series: isSeriesList(l), ids: orderedList(l).filter(it => it.id).map(it => it.id)});
+    return this.lc.get(l);
+  },
+  readOf(id){   // gelesen = dieser Eintrag oder ein Duplikat/eine andere Sprachversion davon
+    const g = S.all.get(id); if (!g) return false; if (g.user.read) return true;
+    const d = Rel.analyze().dupOf.get(id); return !!d && d.ids.some(x => S.all.get(x)?.user.read);
+  },
+  // Alle Reihen-Kontexte eines Eintrags: [{name, ids:[geordnet], idx}]
+  contexts(g){
+    const out = [];
+    for (const l of g.user.lists) if (S.meta.lists.includes(l) && this.listCtx(l).series) {
+      const ids = this.listCtx(l).ids;
+      out.push({name:'Liste „' + listLabel(l) + '“', list:l, ids, idx:ids.indexOf(g.id)});
+    }
+    const A = Rel.analyze(), s = A.seriesOf.get(g.id);
+    if (s && !A.ign.has(s.sig) && !out.some(c => s.ids.every(id => c.ids.includes(id)))) {
+      // erkannte Reihe: nach Nummer gruppiert – eine Nummer gilt als gelesen, wenn irgendein Upload davon gelesen ist
+      out.push({name:'Reihe „' + s.name + '“', auto:s, ids:s.parts.map(p => p.id), idx:s.parts.findIndex(p => p.id === g.id)});
+    }
+    return out;
+  },
+  // Erster ungelesener Vorgänger (oder null)
+  blocker(g){
+    for (const c of this.contexts(g)) {
+      if (c.auto) {
+        const me = c.auto.parts[c.idx], myN = me?.num ?? 1;
+        const byNum = new Map(); for (const p of c.auto.parts) { const n = p.num ?? 1; if (n < myN) { if (!byNum.has(n)) byNum.set(n, []); byNum.get(n).push(p.id); } }
+        for (const [n, ids] of [...byNum].sort((a, b) => a[0] - b[0])) if (!ids.some(id => this.readOf(id))) return {id:ids[0], ctx:c};
+      } else for (const id of c.ids.slice(0, c.idx)) if (!this.readOf(id)) return {id, ctx:c};
+    }
+    return null;
+  },
+  pool(){
+    const base = $('#sgView')?.checked ? S.view : [...S.all.values()];
+    return base.filter(g => g.status === 'active' || $('#sgRemoved')?.checked);
+  },
+  pick(arr, mode){
+    if (!arr.length) return null;
+    const seen = this.shown.get(mode) || new Set(); let fresh = arr.filter(x => !seen.has((x.g || x).id));
+    if (!fresh.length) { seen.clear(); fresh = arr; }
+    const x = fresh[Math.floor(Math.random() * fresh.length)];
+    seen.add((x.g || x).id); this.shown.set(mode, seen); return x;
+  },
+  lastReadAt: g => g.user.last_read_at || 0,
+  modes: {
+    random(){ const c = Sug.pool().filter(g => !Sug.blocker(g)); return {one: Sug.pick(c, 'random'), n: c.length, reason: 'Zufällig aus deinem Archiv'}; },
+    unread(){ const c = Sug.pool().filter(g => !Sug.readOf(g.id) && !Sug.blocker(g)); return {one: Sug.pick(c, 'unread'), n: c.length, reason: 'Zufällig, noch nicht gelesen'}; },
+    started(){
+      const c = Sug.pool().filter(g => !g.user.read && (g.user.last_page || 0) > 1).sort((a, b) => Sug.lastReadAt(b) - Sug.lastReadAt(a));
+      return {list: c.map(g => ({g, why:`Seite ${g.user.last_page} von ${g.pages || '?'}`, page:g.user.last_page}))};
+    },
+    next(){
+      const res = [], seenCtx = new Set(), inPool = new Set(Sug.pool().map(g => g.id));
+      for (const g of S.all.values()) for (const c of Sug.contexts(g)) {
+        const key = c.list || c.auto.sig; if (seenCtx.has(key)) continue; seenCtx.add(key);
+        const readIds = c.ids.filter(id => Sug.readOf(id)); if (!readIds.length) continue;
+        const nextId = c.ids.find(id => !Sug.readOf(id) && inPool.has(id) && !Sug.blocker(S.all.get(id)));
+        if (!nextId) continue;
+        const last = readIds.map(id => S.all.get(id)).sort((a, b) => Sug.lastReadAt(b) - Sug.lastReadAt(a))[0];
+        const pos = c.ids.indexOf(nextId) + 1;
+        res.push({g:S.all.get(nextId), why:`${c.name} · Teil ${pos} von ${c.ids.length} · ${readIds.length} gelesen`, at:Sug.lastReadAt(last)});
+      }
+      return {list: res.sort((a, b) => b.at - a.at)};
+    },
+    taste(){
+      const w = new Map(), add = (k, v) => w.set(k, (w.get(k) || 0) + v);
+      let liked = [...S.all.values()].filter(g => (g.user.rating || 0) >= 4);
+      if (liked.length < 3) liked = [...S.all.values()].filter(g => g.user.read || (g.user.rating || 0) >= 3);
+      if (!liked.length) return {one:null, n:0, empty:'Bewerte ein paar Werke mit ★★★★ oder mehr (oder lies welche), dann kann ich passende vorschlagen.'};
+      for (const g of liked) { const f = g.user.rating ? g.user.rating - 2 : 1;
+        for (const t of g.tags.tag || []) add('tag:' + t, f); for (const t of g.tags.artist || []) add('artist:' + t, 2 * f); for (const t of g.tags.parody || []) if (t !== 'original') add('parody:' + t, f); }
+      const df = new Map(); for (const g of S.all.values()) for (const t of g.tags.tag || []) df.set(t, (df.get(t) || 0) + 1);
+      const N = S.all.size || 1;
+      const scored = Sug.pool().filter(g => !Sug.readOf(g.id) && !Sug.blocker(g)).map(g => {
+        const hits = [];
+        let sc = 0;
+        for (const t of g.tags.tag || []) { const v = (w.get('tag:' + t) || 0) * Math.log(1 + N / (df.get(t) || 1)); if (v) { sc += v; hits.push([t, v]); } }
+        for (const t of g.tags.artist || []) { const v = w.get('artist:' + t) || 0; if (v) { sc += v * 3; hits.push(['Künstler ' + t, v * 3]); } }
+        for (const t of g.tags.parody || []) { const v = w.get('parody:' + t) || 0; if (v) { sc += v * 2; hits.push([t, v * 2]); } }
+        return {g, sc: sc / Math.sqrt(1 + (g.tags.tag || []).length), hits};
+      }).filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc);
+      const top = scored.slice(0, Math.max(8, Math.ceil(scored.length * 0.05)));
+      const x = Sug.pick(top, 'taste');
+      return {one: x?.g, n: scored.length, reason: x ? 'Passt zu deinen Lieblingen: ' + x.hits.sort((a, b) => b[1] - a[1]).slice(0, 4).map(h => h[0]).join(', ') : ''};
+    },
+    again(){
+      const c = Sug.pool().filter(g => g.user.read && (g.user.rating || 0) >= 4).sort((a, b) => Sug.lastReadAt(a) - Sug.lastReadAt(b));
+      const x = Sug.pick(c.slice(0, Math.max(5, Math.ceil(c.length / 2))), 'again');   // eher die, die länger her sind
+      return {one: x, n: c.length, reason: x ? `★${x.user.rating} – ${x.user.last_read_at ? 'zuletzt gelesen am ' + fmtTs(x.user.last_read_at) : 'schon länger nicht mehr gelesen'}` : '', empty:'Noch keine gelesenen Werke mit ★★★★ oder mehr.'};
+    },
+    artist(){
+      const last = [...S.all.values()].filter(g => g.user.last_read_at).sort((a, b) => b.user.last_read_at - a.user.last_read_at)[0];
+      if (!last) return {one:null, n:0, empty:'Lies zuerst etwas im Reader – dann schlage ich mehr vom selben Künstler vor.'};
+      const cr = Rel.creators(last);
+      if (!cr.size) return {one:null, n:0, empty:'Dein zuletzt gelesenes Werk hat keinen Künstler-Tag.'};
+      const c = Sug.pool().filter(g => g.id !== last.id && !Sug.readOf(g.id) && !Sug.blocker(g) && [...Rel.creators(g)].some(x => cr.has(x)));
+      return {one: Sug.pick(c, 'artist'), n: c.length, reason: `Mehr von ${[...cr].join(', ')} – zuletzt gelesen: ${dispTitle(last)}`, empty:`Keine weiteren ungelesenen Werke von ${[...cr].join(', ')}.`};
+    }
+  }
+};
+const SUG_MODES = [
+  ['unread', '🎲', 'Zufällig ungelesen', 'Etwas Neues – Reihen erst ab dem nächsten offenen Teil'],
+  ['random', '🎲', 'Komplett zufällig', 'Aus allem, auch schon Gelesenes'],
+  ['next', '📚', 'In Reihe weiterlesen', 'Nächster ungelesener Teil deiner angefangenen Reihen'],
+  ['started', '▶', 'Angefangen', 'Werke, die du mittendrin abgebrochen hast'],
+  ['taste', '⭐', 'Passt zu deinen Lieblingen', 'Ungelesenes mit Tags & Künstlern deiner ★4–5-Werke'],
+  ['artist', '🎨', 'Mehr vom Künstler', 'Ungelesenes vom Künstler deines zuletzt gelesenen Werks'],
+  ['again', '🔁', 'Nochmal lesen', 'Gut bewertete Werke, die länger her sind']
+];
+function showSuggest(mode){
+  if (mode) S.sugMode = mode;
+  const m = S.sugMode || 'unread';
+  const optView = ls.get('sgView', false), optRm = ls.get('sgRemoved', false);
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>✨ Was lese ich als Nächstes?</h2>
+    <div class="sggrid">${SUG_MODES.map(([k, ic, t, d]) => `<button class="sgbtn ${k === m ? 'on' : ''}" data-sg="${k}"><span class="ic">${ic}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>
+    <div class="row" style="margin:6px 0 14px;gap:16px">
+      <label class="check" style="margin:0"><input type="checkbox" id="sgView" ${optView ? 'checked' : ''}> Nur aus der aktuellen Ansicht (Filter/Liste)</label>
+      <label class="check" style="margin:0"><input type="checkbox" id="sgRemoved" ${optRm ? 'checked' : ''}> Entfernte einbeziehen</label></div>
+    <div id="sgOut"></div>`;
+  if (S.modal !== 'suggest') showModal('suggest');
+  renderSuggestion();
+}
+function sgCard(g, why, page){
+  const tags = (g.tags.tag || []).slice(0, 8).map(t => `<span class="chip" style="cursor:default">${esc(t)}</span>`).join('');
+  const blk = Sug.blocker(g);
+  return `<div class="sgcard"><div class="dcover"><img alt="" data-gid="${esc(g.id)}"></div>
+    <div style="min-width:0"><div class="sgwhy">${esc(why)}</div><h3 style="margin:4px 0 2px">${esc(dispTitle(g))}</h3>
+      <div class="muted" style="font-size:13px">#${esc(g.id)} · ${esc((g.tags.artist || []).join(', ') || '–')} · ${g.pages || '?'} S. · ${esc(Rel.lang(g))}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}${g.user.read ? ' · ✓ gelesen' : ''}</div>
+      ${blk ? `<div class="warnbox" style="margin:8px 0">Vorgänger noch ungelesen: ${esc(dispTitle(S.all.get(blk.id)))}</div>` : ''}
+      <div class="v" style="display:flex;flex-wrap:wrap;gap:5px;margin:10px 0">${tags}</div>
+      <div class="row"><button class="primary" data-sgread="${esc(g.id)}" data-page="${page || (g.user.last_page > 1 && !g.user.read ? g.user.last_page : 1)}">▶ ${page || (g.user.last_page > 1 && !g.user.read) ? 'Weiterlesen' : 'Lesen'}</button><button data-sgopen="${esc(g.id)}">Details</button></div></div></div>`;
+}
+function renderSuggestion(){
+  const out = $('#sgOut'); if (!out) return;
+  Sug.begin();
+  const m = S.sugMode || 'unread', r = Sug.modes[m]();
+  if (r.list) {
+    out.innerHTML = r.list.length
+      ? `<div class="muted" style="font-size:13px;margin-bottom:8px">${r.list.length} Vorschläge</div>${sgCard(r.list[0].g, r.list[0].why, r.list[0].page)}
+         ${r.list.length > 1 ? `<div class="lbl" style="margin-top:14px">Weitere</div><div class="rvsec">${r.list.slice(1, 15).map(x => `<div class="rv relitem" data-sgopen="${esc(x.g.id)}" style="grid-template-columns:44px 1fr auto"><span class="thumb"><img alt="" data-gid="${esc(x.g.id)}"></span><span><b>${esc(dispTitle(x.g))}</b><small>${esc(x.why)}</small></span><button class="markbtn" data-sgread="${esc(x.g.id)}" data-page="${x.page || 1}">▶</button></div>`).join('')}</div>` : ''}`
+      : `<p class="muted">${m === 'next' ? 'Keine angefangene Reihe mit offenem nächsten Teil. Reihen erkennt das Tool automatisch oder über Listen, die als Reihe markiert sind.' : 'Nichts angefangen – alles entweder gelesen oder noch nicht begonnen.'}</p>`;
+  } else {
+    out.innerHTML = r.one
+      ? sgCard(r.one, r.reason) + `<div class="row foot"><span class="muted" style="font-size:12.5px;margin-right:auto">${r.n} passende Werke</span><button data-sgagain>🎲 Anderer Vorschlag</button></div>`
+      : `<p class="muted">${esc(r.empty || 'Nichts Passendes gefunden. Prüfe die Optionen oben oder die Filter.')}</p>`;
+  }
+  fillThumbs(out);
+}
+function onSuggestClick(e){
+  let el;
+  if ((el = e.target.closest('[data-sg]'))) return showSuggest(el.dataset.sg);
+  if (e.target.closest('[data-sgagain]')) return renderSuggestion();
+  if ((el = e.target.closest('[data-sgread]'))) { e.stopPropagation(); return openReader(el.dataset.sgread, +el.dataset.page || 1); }
+  if ((el = e.target.closest('[data-sgopen]'))) { S.sugBack = true; return openDetail(el.dataset.sgopen); }
+}
+
 /* ---------- Modal ---------- */
 function showModal(kind){ S.modal = kind; $('#modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; $('#modal').scrollTop = 0; }
-function closeModal(){ if (S.sync) S.sync.abort = true; S.relBack = false; S.listBack = null; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
+function closeModal(){ if (S.sync) S.sync.abort = true; S.relBack = false; S.listBack = null; S.sugBack = false; S.modal = null; S.detailId = null; $('#modal').classList.add('hidden'); $('#modalBody').innerHTML = ''; document.body.style.overflow = ''; }
 
 function openDetail(id){
   const g = S.all.get(id); if (!g) return;
   S.detailId = id;
   const u = g.user, resume = u.last_page > 1 && !u.read;
   const tags = TAG_TYPES.filter(t => (g.tags[t]||[]).length).map(t => `<div class="l">${TYPE_LABEL[t]}</div><div class="v">${g.tags[t].map(n => `<span class="chip" data-tag="${esc(t)}" data-name="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen">${esc(n)}</span>`).join('')}</div>`).join('');
-  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>${S.relBack ? '<button class="linkbtn" data-relback style="margin:-6px 0 8px -6px">‹ Zurück zu Reihen &amp; Duplikaten</button>' : S.listBack ? `<button class="linkbtn" data-listback style="margin:-6px 0 8px -6px">‹ Zurück zur Liste „${esc(S.listBack)}“</button>` : ''}
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>${S.relBack ? '<button class="linkbtn" data-relback style="margin:-6px 0 8px -6px">‹ Zurück zu Reihen &amp; Duplikaten</button>' : S.listBack ? `<button class="linkbtn" data-listback style="margin:-6px 0 8px -6px">‹ Zurück zur Liste „${esc(S.listBack)}“</button>` : S.sugBack ? '<button class="linkbtn" data-sugback style="margin:-6px 0 8px -6px">‹ Zurück zum Vorschlag</button>' : ''}
   <div class="detail">
     <div>
       <div class="dcover"><img alt=""></div>
@@ -1335,6 +1520,7 @@ function onModalClick(e){
     let el;
     if ((el = t.closest('[data-mark]'))) { toggleMark(el); if (el.dataset.mark === g.id) { const cb = $('[data-markflag]'); if (cb) cb.checked = g.user.mark; } return; }
     if (t.closest('[data-relback]')) { S.relBack = false; return showRelations(); }
+    if (t.closest('[data-sugback]')) { S.sugBack = false; return showSuggest(); }
     if (t.closest('[data-listback]')) { const l = S.listBack; S.listBack = null; return showListEditor(l); }
     if ((el = t.closest('[data-ordlist]'))) return showListEditor(el.dataset.ordlist);
     if ((el = t.closest('[data-gopen]'))) return openDetail(el.dataset.gopen);
@@ -1356,10 +1542,13 @@ function onModalClick(e){
   if (S.modal === 'key' || S.modal === 'sync') onSyncClick(e);
   if (S.modal === 'rel') onRelClick(e);
   if (S.modal === 'listedit') onListEditClick(e);
+  if (S.modal === 'suggest') onSuggestClick(e);
   if (S.modal === 'listname' && t.closest('[data-lnsave]')) return saveListName();
   if (t.closest('[data-renlist]') && S.modal === 'listedit') return showListNameDialog(t.closest('[data-renlist]').dataset.renlist);
 }
 function onModalChange(e){
+  if (S.modal === 'suggest' && (e.target.id === 'sgView' || e.target.id === 'sgRemoved')) { ls.set(e.target.id, e.target.checked); Sug.shown.clear(); return renderSuggestion(); }
+  if (S.modal === 'listedit' && e.target.matches('[data-lseries]')) { setSeriesList(S.editList, e.target.checked); return; }
   if (S.modal === 'listedit' && e.target.matches('[data-lch]')) {
     const it = S.editItems[+e.target.dataset.lch]; if (!it) return;
     it.ch = e.target.value.trim(); saveOrder(S.editList, S.editItems); renderListEditor(); if (S.f.list === S.editList) render(); return;
@@ -1368,7 +1557,7 @@ function onModalChange(e){
   if (S.modal === 'detail') {
     const g = S.all.get(S.detailId); if (!g) return;
     if (t.matches('[data-markflag]')) { g.user.mark = t.checked; saveSoon(g); replaceCard(g); renderStat(); }
-    if (t.matches('[data-readflag]')) { g.user.read = t.checked; if (!t.checked) g.user.last_page = 0; saveSoon(g); replaceCard(g); renderStat(); }
+    if (t.matches('[data-readflag]')) { g.user.read = t.checked; if (t.checked) g.user.last_read_at = Date.now(); if (!t.checked) g.user.last_page = 0; saveSoon(g); replaceCard(g); renderStat(); }
     if (t.matches('[data-glist]')) { const l = t.dataset.glist; g.user.lists = t.checked ? [...new Set([...g.user.lists, l])] : g.user.lists.filter(x => x !== l); hayCache.delete(g); saveSoon(g); renderLists(); }
   }
   if (S.modal === 'review') onReviewChange(e);
@@ -1432,7 +1621,7 @@ function showPage(){
 function setPage(p){
   R.page = p;
   $('#rpos').textContent = `${p} / ${R.g.pages}`; $('#rRange').value = p;
-  const u = R.g.user; u.last_page = p;
+  const u = R.g.user; u.last_page = p; u.last_read_at = Date.now();
   if (p >= R.g.pages && !u.read) { u.read = true; toast('✓ Als gelesen markiert'); }
   saveSoon(R.g);
 }
@@ -1451,6 +1640,7 @@ function closeReader(){
   $('#reader').classList.add('hidden'); $('#rstage').innerHTML = '';
   if (!S.modal) document.body.style.overflow = '';
   if (R.g) { quiet(DB.put([R.g])); replaceCard(R.g); renderStat(); if (S.modal === 'detail' && S.detailId === R.g.id) openDetail(R.g.id); }
+  if (S.modal === 'suggest') renderSuggestion();
   R.g = null;
 }
 
@@ -1901,6 +2091,7 @@ function showHelp(){
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
     <li><b>🏷 Markieren</b>: Im Detailfenster oder in „Reihen &amp; Duplikate“ Einträge markieren (z. B. Duplikate, die du auf nhentai entfernst). Unter 🔄 Sync → „Markierte prüfen“ wird dann nur für diese nachgefragt.</li>
+    <li><b>✨ Vorschlag</b> (oben oder Taste Z): zufällig (ungelesen), in Reihe weiterlesen, angefangene, passend zu deinen Lieblingen, mehr vom Künstler, nochmal lesen. Werke, deren Vorgänger in einer Reihe du noch nicht gelesen hast, werden bei Zufallsvorschlägen übersprungen.</li>
     <li><b>Reihen &amp; Duplikate</b> (Menü ⋯): gleicht die Titel ab und findet Teile derselben Reihe (inkl. fehlender Teile) sowie doppelte Einträge bzw. andere Sprachversionen. Im Detailfenster stehen verwandte Einträge direkt unter den Tags.</li>
     <li><b>Cover-Sicherung</b>: Cover werden im Hintergrund lokal gespeichert und bleiben sichtbar, auch wenn eine Galerie auf nhentai gelöscht wird. Sie sind <i>nicht</i> im JSON-Backup enthalten.</li>
     <li><b>Backup</b> (Menü ⋯): Exportiert alles inkl. Bewertungen, Notizen, Listen – damit kannst du auch auf ein anderes Gerät umziehen.</li>
@@ -1912,6 +2103,7 @@ function showHelp(){
 /* ---------- Events ---------- */
 function bind(){
   $('#btnSync').onclick = $('#emptySync').onclick = showSyncDialog;
+  $('#btnSuggest').onclick = () => showSuggest();
   $('#emptyImport').onclick = () => $('#fileImport').click();
   $('#emptyHelp').onclick = showHelp;
   $('#fileImport').onchange = e => { handleFiles([...e.target.files]); e.target.value = ''; };
@@ -2050,6 +2242,7 @@ function bind(){
       return;
     }
     if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
+    if ((e.key === 'z' || e.key === 'Z') && !typing && !e.ctrlKey && !e.metaKey) showSuggest();
   });
 
   let ticking = false;
