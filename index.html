@@ -169,6 +169,12 @@ aside h3 select{max-width:90px}
 .b{background:rgba(0,0,0,.75);border-radius:5px;padding:1px 6px;font-size:11px;font-weight:600}
 .b.read{background:var(--ok);color:#06210f}
 .b.mk{background:#3b6cff;color:#fff}
+.wbadge{position:absolute;z-index:3;top:6px;right:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:#f0b429;color:#2a1d00;font-size:16px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.45)}
+.chip.warn{border-color:var(--bad);background:rgba(255,77,94,.2);color:#ffc2c8;font-weight:600}
+.tg.wedit .chip{border-style:dashed;cursor:pointer}
+.wtag{color:#ffb3bb}
+.facet .ren.won{opacity:1;color:#f0b429}
+.warnred{background:rgba(255,77,94,.12);border-color:rgba(255,77,94,.5)}
 .b.rm{background:var(--warn);color:#2a1d00}
 .b.star{color:#ffd166}
 .card .t{margin-top:7px;font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -290,6 +296,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       <button data-act="delremoved">🗑 Alle entfernten Einträge löschen</button>
       <button data-act="stats" class="only-xs">📊 Statistiken</button>
       <button data-act="relations" class="only-xs">🔗 Reihen &amp; Duplikate finden</button>
+      <button data-act="warn">⚠ Warn-Tags verwalten</button>
       <button data-act="covers">🖼 Cover-Sicherung an/aus</button>
       <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
       <button data-act="help">❓ Anleitung</button>
@@ -334,6 +341,7 @@ textarea{width:100%;min-height:70px;resize:vertical}
       </div>
       <button id="delRemoved" class="danger hidden" style="width:100%;margin-top:8px"></button>
       <label class="check"><input type="checkbox" id="fUnread"> Nur ungelesene</label>
+      <label class="check"><input type="checkbox" id="fHideWarn"> ⚠ Mit Warnung ausblenden</label>
       <label class="check"><input type="checkbox" id="fMarked"> 🏷 Nur markierte <span class="muted" id="markCount"></span></label>
       <div class="row" style="margin-top:8px"><span class="muted" style="font-size:13px">Bewertung ab</span>
         <select id="fRating" style="flex:1"><option value="0">egal</option><option value="1">★</option><option value="2">★★</option><option value="3">★★★</option><option value="4">★★★★</option><option value="5">★★★★★</option></select>
@@ -736,6 +744,42 @@ function sorter(){
   }
 }
 function rnd(g){ let r = S.rnd.get(g.id); if (r === undefined) { r = Math.random(); S.rnd.set(g.id, r); } return r; }
+// ---------- Warn-Tags: S.meta.warnTags = ['typ\u0001name', …]
+const wkey = (t, n) => t + '\u0001' + n;
+function warnSet(){ if (!S._ws || S._wsSrc !== S.meta.warnTags) { S._ws = new Set(S.meta.warnTags || []); S._wsSrc = S.meta.warnTags; } return S._ws; }
+function isWarn(t, n){ return warnSet().has(wkey(t, n)); }
+function warnOf(g){ const w = warnSet(); if (!w.size) return []; const out = []; for (const t of TAG_TYPES) for (const n of (g.tags[t] || [])) if (w.has(wkey(t, n))) out.push(n); return out; }
+function toggleWarn(t, n){
+  const k = wkey(t, n), cur = S.meta.warnTags || [];
+  S.meta.warnTags = cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k];
+  saveMeta(); render();
+  toast(isWarn(t, n) ? `⚠ Warnung für „${n}“ aktiviert` : `Warnung für „${n}“ entfernt`);
+}
+function showWarnDialog(){
+  const list = (S.meta.warnTags || []).map(k => { const [t, n] = k.split('\u0001'); return {t, n, c: [...S.all.values()].filter(g => (g.tags[t] || []).includes(n)).length}; })
+    .sort((a, b) => a.n.localeCompare(b.n, 'de'));
+  $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>⚠ Warn-Tags</h2>
+    <p class="muted" style="font-size:13px;margin-top:-6px">Werke mit diesen Tags bekommen ein ⚠ auf dem Cover, im Detailfenster werden die Tags rot markiert. In der Seitenleiste kannst du sie mit „⚠ Mit Warnung ausblenden“ verstecken.<br>Schneller geht's direkt: im Detailfenster „⚠ Warnungen bearbeiten“ und dann Tags anklicken, oder bei „Häufigste“ links das ⚠ neben einem Tag.</p>
+    <div class="row" style="margin-bottom:12px"><input id="warnAdd" list="tagList" placeholder="Tag suchen, z. B. tag:… oder künstler:…" style="flex:1;min-width:200px"><button class="primary" data-warnadd>Hinzufügen</button></div>
+    ${list.length ? `<div class="rvsec">${list.map(x => `<div class="rv" style="grid-template-columns:1fr auto;cursor:default"><span><b class="wtag">⚠ ${esc(x.n)}</b><small>${esc(TYPE_LABEL[x.t] || x.t)} · ${x.c} Werke im Archiv</small></span>
+      <span class="row" style="gap:6px"><button class="markbtn" data-warnshow="${esc(wkey(x.t, x.n))}">Anzeigen</button><button class="markbtn" data-warnrm="${esc(wkey(x.t, x.n))}">✕ Entfernen</button></span></div>`).join('')}</div>`
+      : '<p class="muted">Noch keine Warn-Tags.</p>'}`;
+  if (S.modal !== 'warn') showModal('warn');
+}
+function onWarnClick(e){
+  let el;
+  if (e.target.closest('[data-warnadd]')) {
+    const v = $('#warnAdd').value.trim(), i = v.indexOf(':');
+    let t = 'tag', n = v;
+    if (i > 0 && KEY_TYPE[v.slice(0, i)]) { t = KEY_TYPE[v.slice(0, i)]; n = v.slice(i + 1); }
+    if (!n) return;
+    if (!isWarn(t, n)) toggleWarn(t, n);
+    return showWarnDialog();
+  }
+  if ((el = e.target.closest('[data-warnrm]'))) { const [t, n] = el.dataset.warnrm.split('\u0001'); toggleWarn(t, n); return showWarnDialog(); }
+  if ((el = e.target.closest('[data-warnshow]'))) { const [t, n] = el.dataset.warnshow.split('\u0001'); closeModal(); S.f.hideWarn = false; $('#fHideWarn').checked = false; ls.set('hideWarn', false); return addChip(t, n); }
+}
+
 // Zusatzfilter aus der Statistik (Bewertung, Seitenzahl, Upload-Jahr, Monat …)
 function extraOk(g, x){
   const mk = ts => { const d = new Date(ts); return d.getFullYear() * 12 + d.getMonth(); };
@@ -758,6 +802,7 @@ function computeView(){
     if (f.status !== 'all' && g.status !== f.status) continue;
     if (f.unread && g.user.read) continue;
     if (f.marked && !g.user.mark) continue;
+    if (f.hideWarn && warnOf(g).length) continue;
     if (f.minRating && (g.user.rating||0) < f.minRating) continue;
     if (f.list && !(g.user.lists||[]).includes(f.list)) continue;
     if (f.extra && !extraOk(g, f.extra)) continue;
@@ -783,7 +828,8 @@ function card(g){
   const d = document.createElement('div'); d.className = 'card'; d.dataset.id = g.id;
   const lang = langCode(g), r = g.user.rating||0;
   if (g.user.mark) d.classList.add('marked');
-  d.innerHTML = `<div class="cover"><button class="cmark ${g.user.mark ? 'on' : ''}" data-cmark title="Markieren · Shift+Klick: ganzen Bereich markieren">🏷</button><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
+  const wn = warnOf(g);
+  d.innerHTML = `<div class="cover">${wn.length ? `<span class="wbadge" title="⚠ Warnung: ${esc(wn.join(', '))}">⚠</span>` : ''}<button class="cmark ${g.user.mark ? 'on' : ''}" data-cmark title="Markieren · Shift+Klick: ganzen Bereich markieren">🏷</button><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
     <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.user.mark?'<span class="b mk">🏷</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}${S.chMap?.get(g.id) ? `<span class="b">Ch. ${esc(S.chMap.get(g.id))}</span>` : ''}</div></div>
     <div class="t">${esc(dispTitle(g))}</div><div class="s">${esc((g.tags.artist||[]).join(', ') || (g.tags.group||[]).join(', ') || (g.tags.parody||[]).join(', ') || '–')}</div>`;
   const img = d.querySelector('img'); img.loading = 'lazy'; loadImg(img, 'cover', g);
@@ -822,7 +868,8 @@ function renderFacets(){
   const top = [...cnt].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0])).slice(0, 40);
   $('#facets').innerHTML = top.length ? top.map(([n,c]) => {
     const on = S.f.chips.some(x => x.type === t && x.name === n);
-    return `<div class="facet ${on?'on':''}" data-ft="${esc(t)}" data-fn="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen"><span>${esc(n)}</span><span class="n">${c}</span></div>`;
+    const w = isWarn(t, n);
+    return `<div class="facet ${on?'on':''}" data-ft="${esc(t)}" data-fn="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen"><span class="${w ? 'wtag' : ''}">${w ? '⚠ ' : ''}${esc(n)}</span><span style="white-space:nowrap"><span class="n">${c}</span><span class="ren ${w ? 'won' : ''}" data-fwarn title="${w ? 'Warnung entfernen' : 'Als Warn-Tag markieren'}">⚠</span></span></div>`;
   }).join('') : '<div class="muted" style="font-size:13px">–</div>';
 }
 function renderLists(){
@@ -1452,7 +1499,7 @@ const Sug = {
   },
   pool(){
     const base = $('#sgView')?.checked ? S.view : [...S.all.values()];
-    return base.filter(g => g.status === 'active' || $('#sgRemoved')?.checked);
+    return base.filter(g => (g.status === 'active' || $('#sgRemoved')?.checked) && !(S.f.hideWarn && warnOf(g).length));
   },
   pick(arr, mode){
     if (!arr.length) return null;
@@ -1627,7 +1674,7 @@ function showStats(){
   else tagRows.sort((a, b) => b.c - a.c);
   const shown = tagRows.slice(0, S.statAll ? 200 : 25);
   const tagBars = statBars(shown.map(x => ({
-    label: x.n,
+    label: (isWarn(t, x.n) ? '⚠ ' : '') + x.n,
     value: S.statSort === 'unread' ? x.c - x.r : x.c,
     cols: [pct(x.r, x.c) + ' %', x.rc ? `${(x.rs / x.rc).toFixed(1).replace('.', ',')} ★ (${x.rc})` : ''],
     title: `${x.n}: ${x.c} Einträge, ${x.r} gelesen${x.rc ? `, Ø ${(x.rs / x.rc).toFixed(2)} ★ aus ${x.rc} Bewertungen` : ''} – Klick filtert`,
@@ -1708,7 +1755,7 @@ function openDetail(id){
   const g = S.all.get(id); if (!g) return;
   S.detailId = id;
   const u = g.user, resume = u.last_page > 1 && !u.read;
-  const tags = TAG_TYPES.filter(t => (g.tags[t]||[]).length).map(t => `<div class="l">${TYPE_LABEL[t]}</div><div class="v">${g.tags[t].map(n => `<span class="chip" data-tag="${esc(t)}" data-name="${esc(n)}" title="Klick: filtern · Shift+Klick: ausschließen">${esc(n)}</span>`).join('')}</div>`).join('');
+  const tags = TAG_TYPES.filter(t => (g.tags[t]||[]).length).map(t => `<div class="l">${TYPE_LABEL[t]}</div><div class="v">${g.tags[t].map(n => `<span class="chip ${isWarn(t, n) ? 'warn' : ''}" data-tag="${esc(t)}" data-name="${esc(n)}" title="${S.warnEdit ? 'Klick: Warnung an/aus' : (isWarn(t, n) ? '⚠ Warn-Tag · ' : '') + 'Klick: filtern · Shift+Klick: ausschließen'}">${isWarn(t, n) ? '⚠ ' : ''}${esc(n)}</span>`).join('')}</div>`).join('');
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button>${S.relBack ? '<button class="linkbtn" data-relback style="margin:-6px 0 8px -6px">‹ Zurück zu Reihen &amp; Duplikaten</button>' : S.listBack ? `<button class="linkbtn" data-listback style="margin:-6px 0 8px -6px">‹ Zurück zur Liste „${esc(S.listBack)}“</button>` : S.sugBack ? '<button class="linkbtn" data-sugback style="margin:-6px 0 8px -6px">‹ Zurück zum Vorschlag</button>' : ''}
   <div class="detail">
     <div>
@@ -1723,8 +1770,10 @@ function openDetail(id){
       <h2>${esc(g.title_english || dispTitle(g))}</h2>
       ${g.title_japanese ? `<div class="jp">${esc(g.title_japanese)}</div>` : ''}
       ${g.status === 'removed' ? `<div class="warnbox">Nicht mehr in deinen nhentai-Favoriten (seit ${fmtTs(g.removed_at)}) – bleibt aber in deinem Archiv.<br><button data-reactivate>Kennzeichnung aufheben</button><button data-delete class="danger">Aus Archiv löschen</button></div>` : ''}
+      ${(w => w.length ? `<div class="warnbox warnred">⚠ <b>Warnung:</b> ${w.map(esc).join(', ')}</div>` : '')(warnOf(g))}
       <div class="meta"><a href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer">#${esc(g.id)} auf nhentai ↗</a><span>${g.pages||'?'} Seiten</span><span>Upload: ${fmtDate(g.upload_date)}</span><span>Im Archiv seit ${fmtTs(g.added_at)}</span></div>
-      <div class="tg">${tags || '<div class="muted">Keine Tags</div>'}</div>
+      <div class="tg ${S.warnEdit ? 'wedit' : ''}">${tags || '<div class="muted">Keine Tags</div>'}</div>
+      <div style="margin:-6px 0 8px"><button class="linkbtn" data-warnedit style="padding:2px 0;font-size:12.5px">${S.warnEdit ? '✓ Fertig – Warnungen bearbeiten beenden' : '⚠ Warnungen bearbeiten'}</button>${S.warnEdit ? '<span class="muted" style="font-size:12.5px"> · Klick auf einen Tag schaltet die Warnung an/aus</span>' : ''}</div>
       ${relBlock(g)}
       <div class="personal">
         <div class="row"><span class="lbl" style="margin:0 6px 0 0">Bewertung</span>
@@ -1763,7 +1812,11 @@ function onModalClick(e){
     if ((el = t.closest('[data-gopen]'))) return openDetail(el.dataset.gopen);
     if ((el = t.closest('[data-read]'))) return openReader(g.id, +el.dataset.read);
     if ((el = t.closest('[data-nav]'))) return navDetail(+el.dataset.nav);
-    if ((el = t.closest('[data-tag]'))) { closeModal(); return addChip(el.dataset.tag, el.dataset.name, e.shiftKey ? 'exc' : 'inc'); }
+    if (t.closest('[data-warnedit]')) { S.warnEdit = !S.warnEdit; const y = $('#modal').scrollTop; openDetail(g.id); $('#modal').scrollTop = y; return; }
+    if ((el = t.closest('[data-tag]'))) {
+      if (S.warnEdit) { toggleWarn(el.dataset.tag, el.dataset.name); const y = $('#modal').scrollTop; openDetail(g.id); $('#modal').scrollTop = y; return; }
+      closeModal(); return addChip(el.dataset.tag, el.dataset.name, e.shiftKey ? 'exc' : 'inc');
+    }
     if ((el = t.closest('[data-star]'))) {
       const v = +el.dataset.star; g.user.rating = g.user.rating === v ? 0 : v;
       document.querySelectorAll('#modalBody [data-star]').forEach(s => s.classList.toggle('on', +s.dataset.star <= g.user.rating));
@@ -1780,6 +1833,7 @@ function onModalClick(e){
   if (S.modal === 'rel') onRelClick(e);
   if (S.modal === 'listedit') onListEditClick(e);
   if (S.modal === 'suggest') onSuggestClick(e);
+  if (S.modal === 'warn') onWarnClick(e);
   if (S.modal === 'stats') onStatsClick(e);
   if (S.modal === 'listname' && t.closest('[data-lnsave]')) return saveListName();
   if (t.closest('[data-renlist]') && S.modal === 'listedit') return showListNameDialog(t.closest('[data-renlist]').dataset.renlist);
@@ -1807,6 +1861,7 @@ function onModalInput(e){
   if (S.modal === 'detail' && e.target.matches('[data-notes]')) { const g = S.all.get(S.detailId); g.user.notes = e.target.value; hayCache.delete(g); saveSoon(g); }
 }
 function onModalKey(e){
+  if (S.modal === 'warn' && e.key === 'Enter' && e.target.id === 'warnAdd') return $('[data-warnadd]').click();
   if (S.modal === 'listname' && e.key === 'Enter' && e.target.matches('input')) return saveListName();
   if (S.modal === 'key' && e.key === 'Enter' && e.target.matches('[data-keyinput]')) return saveKey();
   if (S.modal === 'detail' && e.target.matches('[data-newlist]') && e.key === 'Enter') {
@@ -2332,6 +2387,7 @@ function showHelp(){
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
     <li><b>🏷 Markieren</b>: Im Detailfenster oder in „Reihen &amp; Duplikate“ Einträge markieren (z. B. Duplikate, die du auf nhentai entfernst). Unter 🔄 Sync → „Markierte prüfen“ wird dann nur für diese nachgefragt.</li>
+    <li><b>⚠ Warn-Tags</b>: Im Detailfenster „⚠ Warnungen bearbeiten“ und Tags anklicken (oder ⚠ neben einem Tag unter „Häufigste“, oder Menü ⋯ → Warn-Tags verwalten). Betroffene Werke zeigen ⚠ auf dem Cover; links lassen sie sich ausblenden.</li>
     <li><b>📊 Statistiken</b> (Menü ⋯ oder unten in der Seitenleiste): Lesequote, Bewertungen, häufigste Tags/Künstler mit Lesequote und Ø Bewertung, Seitenzahlen, Upload-Jahre, Lese-Aktivität, Listen. Optional nur für die aktuelle Ansicht.</li>
     <li><b>✨ Vorschlag</b> (oben oder Taste Z): zufällig (ungelesen), in Reihe weiterlesen, angefangene, passend zu deinen Lieblingen, mehr vom Künstler, nochmal lesen. Werke, deren Vorgänger in einer Reihe du noch nicht gelesen hast, werden bei Zufallsvorschlägen übersprungen.</li>
     <li><b>Reihen &amp; Duplikate</b> (Menü ⋯): gleicht die Titel ab und findet Teile derselben Reihe (inkl. fehlender Teile) sowie doppelte Einträge bzw. andere Sprachversionen. Im Detailfenster stehen verwandte Einträge direkt unter den Tags.</li>
@@ -2375,6 +2431,7 @@ function bind(){
     if (a === 'relations') showRelations();
     if (a === 'stats') showStats();
     if (a === 'delremoved') deleteRemoved();
+    if (a === 'warn') showWarnDialog();
     if (a === 'covers') {
       const on = !Covers.enabled(); ls.set('covercache', on);
       if (on) { Covers.stopped = false; Covers.enqueueMissing(); toast('Cover-Sicherung an – läuft im Hintergrund.'); }
@@ -2429,12 +2486,14 @@ function bind(){
   $('#segStatus').onclick = e => { const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; ls.set('status', S.f.status); document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x === b)); render(); };
   $('#fUnread').onchange = e => { S.f.unread = e.target.checked; render(); };
   $('#fMarked').onchange = e => { S.f.marked = e.target.checked; render(); };
+  $('#fHideWarn').onchange = e => { S.f.hideWarn = e.target.checked; ls.set('hideWarn', e.target.checked); render(); };
   $('#fRating').onchange = e => { S.f.minRating = +e.target.value; render(); };
   $('#facetType').innerHTML = TAG_TYPES.map(t => `<option value="${t}">${TYPE_LABEL[t]}</option>`).join('');
   $('#facetType').value = S.facetType;
   $('#facetType').onchange = e => { S.facetType = e.target.value; ls.set('facetType', S.facetType); renderFacets(); };
   $('#facets').onclick = e => {
     const el = e.target.closest('[data-ft]'); if (!el) return;
+    if (e.target.closest('[data-fwarn]')) return toggleWarn(el.dataset.ft, el.dataset.fn);
     const i = S.f.chips.findIndex(c => c.type === el.dataset.ft && c.name === el.dataset.fn);
     if (i >= 0 && !e.shiftKey) { S.f.chips.splice(i,1); render(); } else addChip(el.dataset.ft, el.dataset.fn, e.shiftKey ? 'exc' : 'inc');
   };
@@ -2504,6 +2563,7 @@ function bind(){
 
 /* ---------- Start ---------- */
 (async () => {
+  S.f.hideWarn = ls.get('hideWarn', false); $('#fHideWarn').checked = S.f.hideWarn;
   S.sort = ls.get('sort','fav'); S.facetType = ls.get('facetType','tag'); S.f.status = ls.get('status','all');
   document.querySelectorAll('#segStatus button').forEach(x => x.classList.toggle('on', x.dataset.status === S.f.status));
   if (ls.get('discreet', false)) document.body.classList.add('discreet');
