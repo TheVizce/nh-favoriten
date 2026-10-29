@@ -1,16 +1,14 @@
 # Favoriten-Archiv
 
-Ein Tool, um nhentai-Favoriten zu organisieren und anzuschauen. Es besteht aus einer einzigen Datei und läuft auf GitHub Pages.
+Ein Tool, um die eigenen nhentai-Favoriten zu organisieren, anzusehen und zu synchronisieren. Es besteht aus einer einzigen Datei (`index.html`) und läuft auf GitHub Pages.
 
 ## Einrichten
-1. Neues Repo anlegen und `index.html` hochladen.
-2. Unter **Settings → Pages** „Deploy from branch“, `main` / `root` wählen.
-3. `nhentai-favoriten-sync.user.js` in Tampermonkey installieren. Das alte CSV-Skript kann deaktiviert werden.
+1. Tool öffnen, oben auf **🔄 Sync** klicken und einen [nhentai-API-Key](https://nhentai.net/user/settings#apikeys) einfügen.
+2. Blockiert der Browser den direkten Zugriff (Hinweis beim Key-Test), das Userscript **[Favoriten-Archiv API-Bridge](https://raw.githubusercontent.com/TheVizce/nh-favoriten/main/userscripts/favoriten-archiv-bridge.user.js)** in Tampermonkey installieren. Es wird für die Cover-Sicherung ebenfalls gebraucht und aktualisiert sich über Tampermonkey automatisch.
 
-## Benutzen
-- Auf nhentai.net die Favoriten öffnen. Im Panel **🆕 Neue holen** klicken (schnell) oder **🔄 Alles prüfen** (langsam, findet geänderte Tags).
-- Die heruntergeladene JSON im Tool über **Import / Update** oder per Drag & Drop einlesen. Danach den Prüf-Dialog bestätigen.
-- Alte CSVs aus dem v2.1-Skript lassen sich ebenfalls importieren.
+## Dateien
+- `index.html`: das komplette Tool
+- `userscripts/favoriten-archiv-bridge.user.js`: Bridge für API-Anfragen und Cover-Bilder (nur lesende Anfragen, nur auf `thevizce.github.io`)
 
 ## Datenschutz
-Die Daten liegen nur lokal im Browser (IndexedDB), nicht im Repo. Für einen Gerätewechsel gibt es Backup und Restore im Menü ⋯.
+Die Daten liegen nur lokal im Browser (IndexedDB `nh-fav-archiv`), nicht im Repo. Der API-Key liegt nur im localStorage des Browsers. Für Sicherung und Gerätewechsel gibt es Backup und Restore (💾 oben bzw. Menü ⋯).

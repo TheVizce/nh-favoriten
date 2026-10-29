@@ -690,8 +690,8 @@ const Covers = {
       el.textContent = '';
     } catch (e) {
       this.queue = []; this.stopped = true;
-      el.textContent = e.message === 'nobridge'
-        ? 'Cover-Sicherung braucht das Bridge-Userscript (ab v4.1).'
+      el.innerHTML = e.message === 'nobridge'
+        ? 'Cover-Sicherung braucht das Bridge-Userscript – <a href="' + BRIDGE_URL + '" target="_blank" rel="noopener">installieren</a>.'
         : 'Cover-Sicherung gestoppt (Speicherfehler).';
     } finally {
       this.running = false;
@@ -2173,7 +2173,8 @@ function fromListItem(x){
     tags:normTags(complete ? tags : {}), pages:x.num_pages||0, upload_date:'', cover_url:'', thumb_path:x.thumbnail||'', page_exts:[], default_ext:'', src:'api2'};
 }
 function connHint(){ return Api.bridge ? 'Verbindung über Bridge-Userscript ✓' : 'Direkte Verbindung (ohne Bridge-Userscript)'; }
-function corsHelp(){ return `Dein Browser blockiert den direkten Zugriff auf nhentai. Installiere das Userscript <b>„Favoriten-Archiv API-Bridge“</b> in Tampermonkey und lade diese Seite neu.`; }
+const BRIDGE_URL = 'https://raw.githubusercontent.com/TheVizce/nh-favoriten/main/userscripts/favoriten-archiv-bridge.user.js';
+function corsHelp(){ return `Dein Browser blockiert den direkten Zugriff auf nhentai. <a href="${BRIDGE_URL}" target="_blank" rel="noopener">Userscript „Favoriten-Archiv API-Bridge“ installieren</a> (Tampermonkey nötig) und diese Seite neu laden.`; }
 function showKeyDialog(){
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>🔑 nhentai API-Key</h2>
   <p>Erstelle einen Key in deinen <a href="https://nhentai.net/user/settings#apikeys" target="_blank" rel="noopener noreferrer">nhentai-Einstellungen</a> und füge ihn hier ein. Er bleibt nur in diesem Browser gespeichert – nicht im Backup und nicht auf GitHub.</p>
