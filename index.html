@@ -236,6 +236,12 @@ textarea{width:100%;min-height:70px;resize:vertical}
 
 #reader{position:fixed;inset:0;z-index:60;background:#000;display:flex;flex-direction:column}
 .rbar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(22,22,24,.97);border-bottom:1px solid #222}
+.rstars{font-size:18px;white-space:nowrap}
+#rEnd{position:absolute;inset:52px 0 0 0;z-index:5;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:16px}
+.rendcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(440px,100%);text-align:center}
+.rendcard .lbl{margin-bottom:6px}
+.rendbtn{margin:24px auto 60px;display:block;padding:12px 22px;font-size:15px}
+@media (max-width:820px){.rstars{font-size:15px}}
 .rbar .rt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
 .rbar input[type=range]{width:160px;accent-color:var(--accent);padding:0}
 #rpos{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
@@ -387,10 +393,12 @@ textarea{width:100%;min-height:70px;resize:vertical}
     <span class="rt" id="rTitle"></span>
     <input type="range" id="rRange" min="1" max="1" value="1">
     <span id="rpos"></span>
+    <span class="stars rstars" id="rStars" title="Bewerten (Tasten 1–5, 0 = keine)"><span data-rstar="1">★</span><span data-rstar="2">★</span><span data-rstar="3">★</span><span data-rstar="4">★</span><span data-rstar="5">★</span></span>
     <select id="rMode"><option value="single">Einzelseite</option><option value="scroll">Scrollen</option></select>
     <button class="icon" id="rFit" title="Breite/Höhe anpassen (F)">↔</button>
   </div>
   <div id="rstage"></div>
+  <div id="rEnd" class="hidden"></div>
 </div>
 
 <div id="modal" class="overlay hidden"><div class="dialog" id="modalBody"></div></div>
@@ -1883,7 +1891,7 @@ async function openReader(id, page){
   }
   if (!g.media_id && !(g.page_urls||[]).length && !(g.page_paths||[]).length) { toast('Für diesen Eintrag fehlen Bilddaten – bitte einmal mit dem Skript aktualisieren.'); return; }
   if (!g.pages) { toast('Seitenzahl unbekannt – bitte mit dem Skript aktualisieren.'); return; }
-  R.g = g; R.page = Math.min(Math.max(1, page||1), g.pages);
+  R.g = g; R.page = Math.min(Math.max(1, page||1), g.pages); R.finished = false; hideReaderEnd(); readerStars();
   $('#reader').classList.remove('hidden'); document.body.style.overflow = 'hidden';
   $('#rTitle').textContent = dispTitle(g); $('#rMode').value = R.mode;
   $('#rRange').max = g.pages;
@@ -1895,6 +1903,8 @@ function buildReader(){
   if (R.mode === 'single') { st.appendChild(document.createElement('img')); showPage(); return; }
   const frag = document.createDocumentFragment();
   for (let p = 1; p <= R.g.pages; p++) { const img = document.createElement('img'); img.dataset.p = p; img.alt = ''; frag.appendChild(img); }
+  const endBtn = document.createElement('button'); endBtn.className = 'rendbtn'; endBtn.dataset.rendopen = '1'; endBtn.textContent = '✓ Fertig – bewerten / weiter';
+  frag.appendChild(endBtn);
   st.appendChild(frag);
   R.io = new IntersectionObserver(es => { for (const e of es) { const img = e.target; if (e.isIntersecting && !img.dataset.l) { img.dataset.l = 1; img.addEventListener('load', () => img.classList.add('ok'), {once:true}); loadImg(img, 'page', R.g, +img.dataset.p); } } }, {root:st, rootMargin:'2000px 0px'});
   R.io2 = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) setPage(+e.target.dataset.p); }, {root:st, rootMargin:'-45% 0px -45% 0px'});
@@ -1924,20 +1934,49 @@ function setPage(p){
 function go(d){
   if (R.mode === 'single') {
     const p = R.page + d;
-    if (p < 1) return; if (p > R.g.pages) { toast('Ende erreicht'); return; }
+    if (p < 1) return; if (p > R.g.pages) return showReaderEnd();
     R.page = p; showPage();
   } else {
     const t = $('#rstage').querySelector(`img[data-p="${Math.min(Math.max(1, R.page + d), R.g.pages)}"]`); t?.scrollIntoView({behavior:'smooth'});
   }
 }
 function jump(p){ R.page = p; if (R.mode === 'single') showPage(); else $('#rstage').querySelector(`img[data-p="${p}"]`)?.scrollIntoView(); }
+function readerStars(){ const r = R.g?.user.rating || 0; document.querySelectorAll('#rStars [data-rstar]').forEach(x => x.classList.toggle('on', +x.dataset.rstar <= r)); }
+function setReaderRating(v){
+  if (!R.g) return; R.g.user.rating = R.g.user.rating === v ? 0 : v; saveSoon(R.g); readerStars();
+  if (!$('#rEnd').classList.contains('hidden')) showReaderEnd();
+  toast(R.g.user.rating ? `${'★'.repeat(R.g.user.rating)} bewertet` : 'Bewertung entfernt', 1500);
+}
+// Nächster Teil (Liste als Reihe oder erkannte Reihe)
+function nextPart(g){
+  Sug.begin();
+  for (const c of Sug.contexts(g)) { const n = c.ids[c.idx + 1]; if (n && S.all.has(n)) return {id:n, ctx:c.name}; }
+  return null;
+}
+function showReaderEnd(){
+  const g = R.g; if (!g) return; R.finished = true;
+  const nx = nextPart(g), n = nx && S.all.get(nx.id), u = g.user;
+  $('#rEnd').innerHTML = `<div class="rendcard">
+    <div class="sgwhy">Ende erreicht</div><h3 style="margin:4px 0 14px">${esc(dispTitle(g))}</h3>
+    <div class="lbl">Wie fandest du es?</div>
+    <div class="stars" style="font-size:34px;justify-content:center;margin-bottom:12px">${[1,2,3,4,5].map(i => `<span data-rstar="${i}" class="${i <= (u.rating||0) ? 'on' : ''}">★</span>`).join('')}</div>
+    <label class="check" style="justify-content:center;margin-bottom:16px"><input type="checkbox" data-rendread ${u.read ? 'checked' : ''}> Gelesen</label>
+    ${n ? `<button class="primary" data-rnext="${esc(n.id)}" style="width:100%;margin-bottom:8px">▶ Nächster Teil: ${esc(dispTitle(n))}<br><small style="font-weight:400;opacity:.85">${esc(nx.ctx)}${n.user.read ? ' · schon gelesen' : ''}</small></button>` : ''}
+    <div class="row" style="justify-content:center"><button data-rback>‹ Zurück zur letzten Seite</button><button data-rdetail>Details</button><button data-rclose>Schließen</button></div>
+  </div>`;
+  $('#rEnd').classList.remove('hidden');
+}
+function hideReaderEnd(){ $('#rEnd').classList.add('hidden'); }
 function closeReader(){
+  const fin = R.finished && R.g, fromSug = S.modal === 'suggest';
+  hideReaderEnd(); R.finished = false;
   R.io?.disconnect(); R.io2?.disconnect();
   $('#reader').classList.add('hidden'); $('#rstage').innerHTML = '';
   if (!S.modal) document.body.style.overflow = '';
   if (R.g) { quiet(DB.put([R.g])); replaceCard(R.g); renderStat(); if (S.modal === 'detail' && S.detailId === R.g.id) openDetail(R.g.id); }
+  const gid = R.g?.id; R.g = null;
+  if (fin && fromSug && gid) { S.sugBack = true; return openDetail(gid); }
   if (S.modal === 'suggest') renderSuggestion();
-  R.g = null;
 }
 
 /* ---------- Import: Parsen ---------- */
@@ -2526,7 +2565,18 @@ function bind(){
   $('#rMode').onchange = e => { R.mode = e.target.value; ls.set('rmode', R.mode); buildReader(); };
   $('#rFit').onclick = () => { R.fitw = !R.fitw; ls.set('rfitw', R.fitw); $('#rstage').classList.toggle('fitw', R.fitw); };
   $('#rRange').onchange = e => jump(+e.target.value);
+  $('#rStars').addEventListener('click', e => { const el = e.target.closest('[data-rstar]'); if (el) setReaderRating(+el.dataset.rstar); });
+  $('#rEnd').addEventListener('click', e => {
+    let el; const t = e.target;
+    if ((el = t.closest('[data-rstar]'))) return setReaderRating(+el.dataset.rstar);
+    if (t.closest('[data-rback]')) return hideReaderEnd();
+    if (t.closest('[data-rclose]')) return closeReader();
+    if (t.closest('[data-rdetail]')) { const id = R.g.id, fromSug = S.modal === 'suggest'; R.finished = false; closeReader(); if (fromSug) S.sugBack = true; return openDetail(id); }
+    if ((el = t.closest('[data-rnext]'))) { const id = el.dataset.rnext, n = S.all.get(id); R.finished = false; quiet(DB.put([R.g])); replaceCard(R.g); return openReader(id, n.user.last_page > 1 && !n.user.read ? n.user.last_page : 1); }
+  });
+  $('#rEnd').addEventListener('change', e => { if (e.target.matches('[data-rendread]') && R.g) { R.g.user.read = e.target.checked; if (e.target.checked) R.g.user.last_read_at = Date.now(); saveSoon(R.g); } });
   $('#rstage').addEventListener('click', e => {
+    if (e.target.closest('[data-rendopen]')) return showReaderEnd();
     if (R.mode !== 'single') return;
     const r = e.currentTarget.getBoundingClientRect();
     go(e.clientX - r.left < r.width * 0.3 ? -1 : 1);
@@ -2535,8 +2585,10 @@ function bind(){
   document.addEventListener('keydown', e => {
     const typing = e.target.matches('input:not([type=checkbox]):not([type=radio]),textarea,select');
     if (!$('#reader').classList.contains('hidden')) {
-      if (e.key === 'Escape') return closeReader();
+      if (e.key === 'Escape') { if (!$('#rEnd').classList.contains('hidden')) return hideReaderEnd(); return closeReader(); }
       if (typing) return;
+      if (/^[0-5]$/.test(e.key)) { const v = +e.key; if (v) setReaderRating(v); else if (R.g) { R.g.user.rating = 0; saveSoon(R.g); readerStars(); } return; }
+      if (!$('#rEnd').classList.contains('hidden')) { if (['ArrowLeft','a','A'].includes(e.key)) hideReaderEnd(); return; }
       if (['ArrowRight','d','D'].includes(e.key) || (e.key === ' ' && R.mode === 'single')) { e.preventDefault(); go(1); }
       else if (['ArrowLeft','a','A'].includes(e.key)) { e.preventDefault(); go(-1); }
       else if (e.key === 'f' || e.key === 'F') $('#rFit').click();
