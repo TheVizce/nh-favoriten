@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex,nofollow">
 <title>Favoriten-Archiv</title>
@@ -282,6 +282,13 @@ textarea{width:100%;min-height:70px;resize:vertical}
   .rbar input[type=range]{width:90px}
   .dialog{padding:16px}
 }
+
+/* Home-Bildschirm-App am iPhone: nicht unter Statusleiste/Notch zeichnen */
+header{height:calc(57px + env(safe-area-inset-top));padding-top:calc(10px + env(safe-area-inset-top))}
+aside{top:calc(57px + env(safe-area-inset-top));height:calc(100vh - 57px - env(safe-area-inset-top))}
+#bulk,#errbar{top:calc(57px + env(safe-area-inset-top))}
+@media (max-width:820px){aside{top:calc(57px + env(safe-area-inset-top));height:auto}}
+body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)}
 </style>
 </head>
 <body>
