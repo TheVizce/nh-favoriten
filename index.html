@@ -413,6 +413,8 @@ textarea{width:100%;min-height:70px;resize:vertical}
 <div id="toast"></div>
 <div id="drop" class="hidden">Datei hier ablegen zum Importieren</div>
 
+<!-- GitHub-Sync (gemeinsam für alle Tools, Einstellungen auf der Startseite) -->
+<script src="/startseite/sync-v1.js"></script>
 <script>
 'use strict';
 /* ---------- Konstanten & Helfer ---------- */
@@ -466,6 +468,7 @@ const S = {
 };
 
 /* ---------- IndexedDB ---------- */
+let SYNC = null;   // GitHub-Sync, siehe initSync()
 const DB = {
   db: null,
   open(){ return new Promise((res,rej) => {
@@ -483,7 +486,7 @@ const DB = {
     const fail = err => { err = err || new Error('Transaktion abgebrochen'); if (mode === 'readwrite') reportStorageError(err); rej(err); };
     try { tx = this.db.transaction(store, mode); out = fn(tx.objectStore(Array.isArray(store) ? store[0] : store)); }
     catch (e) { try { tx?.abort(); } catch {} return fail(e); }   // nichts Halbes speichern
-    tx.oncomplete = () => res(out ? out.result : undefined);
+    tx.oncomplete = () => { res(out ? out.result : undefined); if (mode === 'readwrite' && store !== 'covers' && SYNC) SYNC.changed(); };
     tx.onabort = () => fail(tx.error);   // QuotaExceededError landet hier
   });},
   all(){ return this.run('g','readonly', s => s.getAll()); },
@@ -2387,6 +2390,31 @@ async function runDetails(){
   el.textContent = ''; Detail.running = false; saveMeta(); rebuildDatalist();
 }
 
+/* ---------- GitHub-Sync ----------
+   Gleicht mit tool-daten/nh-favoriten/ ab (32 Teildateien), sobald auf der Startseite eingerichtet.
+   Abgeglichen werden Galerien und Meta (Listen usw.); Cover und API-Key bleiben auf dem Gerät. */
+function initSync(){
+  if (!window.ToolSync) return;
+  SYNC = ToolSync.create({
+    tool: 'nh-favoriten',
+    collections: { g: 'array', meta: 'map' },
+    shards: 32,
+    stampDelay: 1500,
+    get: () => ({ g: [...S.all.values()], meta: S.meta }),
+    apply: async d => {
+      flushSaves();
+      const list = (d.g || []).filter(g => g && g.id).map(g => ({...g, id:String(g.id), tags:normTags(g.tags), user:{...defUser(), ...(g.user||{})}}));
+      const meta = {lists:[], ...(d.meta || {})};
+      try { await DB.replaceAll(list, meta); } catch { return false; }
+      S.meta = meta;
+      S.all = new Map(list.map(g => [g.id, g]));
+      Rel.invalidate(); rebuildDatalist(); render();
+      return true;
+    }
+  });
+  SYNC.start();
+}
+
 /* ---------- Backup / Export ---------- */
 function exportBackup(){
   download(`favoriten-archiv-backup_${today()}.json`, JSON.stringify({format:'nh-fav-archiv-backup', version:1, exported_at:new Date().toISOString(), meta:S.meta, galleries:[...S.all.values()]}), 'application/json');
@@ -2417,7 +2445,7 @@ function exportCSV(){
 function showHelp(){
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Anleitung</h2><div class="help">
   <h3>So funktioniert's</h3>
-  <p>Das Tool liest deine Favoriten über die offizielle nhentai-API mit deinem <b>API-Key</b>. Alles wird nur <b>lokal in deinem Browser</b> gespeichert (IndexedDB), nichts landet auf GitHub. Falls der Browser den direkten Zugriff blockiert, hilft das Userscript <b>„Favoriten-Archiv API-Bridge“</b>.</p>
+  <p>Das Tool liest deine Favoriten über die offizielle nhentai-API mit deinem <b>API-Key</b>. Alles wird <b>lokal in deinem Browser</b> gespeichert (IndexedDB). Ist auf der Startseite der GitHub-Sync eingerichtet, werden Galerien und Listen zusätzlich mit deinem <b>privaten</b> Daten-Repo abgeglichen (Cover und API-Key nicht). Falls der Browser den direkten Zugriff blockiert, hilft das Userscript <b>„Favoriten-Archiv API-Bridge“</b>.</p>
   <h3>Update-Routine</h3>
   <ol>
     <li><b>🔄 Sync</b> oben klicken:
@@ -2636,13 +2664,12 @@ function bind(){
   for (const g of await DB.all()) { g.user = {...defUser(), ...(g.user||{})}; g.tags = normTags(g.tags); S.all.set(g.id, g); }
   await Covers.init();
   rebuildDatalist(); render(); renderStorageInfo();
+  initSync();
   setTimeout(() => Covers.enqueueMissing(), 4000);   // erst nach dem Laden der sichtbaren Cover starten
   // Offene Änderungen sofort sichern, wenn der Tab geschlossen oder in den Hintergrund gelegt wird
   addEventListener('pagehide', flushSaves);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
 })();
 </script>
-<!-- Zurück zur Startseite (gemeinsam für alle Tools) -->
-<script src="/startseite/nav-v1.js" defer></script>
 </body>
 </html>
