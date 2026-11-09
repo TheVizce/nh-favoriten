@@ -4,6 +4,7 @@
 - IndexedDB `nh-fav-archiv`, localStorage-Präfix `nhfav-`. Dazu ein Tampermonkey-Skript.
 - Sync: Ordner `nh-favoriten/` (32 Teildateien). `collections: g (array), meta (map)`. Cover und API-Key bleiben lokal.
 - `SYNC.changed()` steckt in `DB.run` (`tx.oncomplete` bei readwrite außer Store `covers`).
+- Eingang: `g.inbox` = `'new'` (wartet) / `'rejected'` (verworfen); ohne Feld = im Archiv. Statistik, Vorschläge und Hauptansicht zeigen nur Archiv-Einträge.
 
 ## Gemeinsame Regeln für alle Tools unter thevizce.github.io
 

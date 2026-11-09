@@ -175,6 +175,19 @@ aside h3 select{max-width:90px}
 .b{background:rgba(0,0,0,.75);border-radius:5px;padding:1px 6px;font-size:11px;font-weight:600}
 .b.read{background:var(--ok);color:#06210f}
 .b.mk{background:#3b6cff;color:#fff}
+.ibadge{position:absolute;z-index:3;left:42px;top:8px;background:#3b6cff;color:#fff;font-size:11px;font-weight:700;border-radius:6px;padding:3px 7px}
+.ibadge.rej{background:#55555f;left:8px}
+.iacts{position:absolute;z-index:3;right:6px;bottom:34px;display:flex;flex-direction:column;gap:5px;opacity:0;transition:opacity .15s}
+.card:hover .iacts{opacity:1}
+.iacts button{width:32px;height:32px;padding:0;border-radius:8px;background:rgba(0,0,0,.7);font-size:15px}
+.iacts [data-iacc]:hover{background:var(--ok);color:#06210f}
+.iacts [data-irej]:hover{background:var(--bad)}
+.card.inbox-rejected .cover img{filter:grayscale(1) brightness(.55)}
+#inboxBanner{background:rgba(59,108,255,.12);border:1px solid rgba(59,108,255,.45);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13.5px}
+#inboxBanner .row button{padding:5px 11px;font-size:13px}
+.inboxbox{background:rgba(59,108,255,.12)!important;border-color:rgba(59,108,255,.5)!important}
+#btnInbox.primary2{background:#3b6cff;border-color:#3b6cff;color:#fff}
+@media (hover:none){.iacts{opacity:1}}
 .wbadge{position:absolute;z-index:3;top:6px;right:6px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:#f0b429;color:#2a1d00;font-size:16px;font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.45)}
 .chip.warn{border-color:var(--bad);background:rgba(255,77,94,.2);color:#ffc2c8;font-weight:600}
 .tg.wedit .chip{border-style:dashed;cursor:pointer}
@@ -297,6 +310,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
   <div class="brand"><img src="icon.svg" alt="" class="logo">Favoriten<span>Archiv</span></div>
   <div class="searchwrap"><input id="q" list="tagList" placeholder="Suchen: Titel, Tag, Künstler, ID, Notiz …   ( / )" autocomplete="off" spellcheck="false"><datalist id="tagList"></datalist></div>
   <div class="hbtns">
+  <button id="btnInbox" class="hidden" title="Eingang: neue Favoriten zum Lesen und Aufnehmen">📥 <b>0</b></button>
   <button id="btnSuggest" title="Vorschlag: Was lese ich als Nächstes? (Taste Z)">✨<span class="wide"> Vorschlag</span></button>
   <button id="btnStats" class="hide-xs" title="Statistiken">📊<span class="wide"> Statistik</span></button>
   <button id="btnRel" class="hide-xs" title="Reihen &amp; Duplikate">🔗<span class="wide"> Reihen</span></button>
@@ -315,6 +329,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
       <button data-act="delremoved">🗑 Alle entfernten Einträge löschen</button>
       <button data-act="stats" class="only-xs">📊 Statistiken</button>
       <button data-act="relations" class="only-xs">🔗 Reihen &amp; Duplikate finden</button>
+      <button data-act="inboxtoggle">📥 Eingang für neue Favoriten an/aus</button>
       <button data-act="warn">⚠ Warn-Tags verwalten</button>
       <button data-act="covers">🖼 Cover-Sicherung an/aus</button>
       <button data-act="discreet">🙈 Diskret-Modus an/aus</button>
@@ -357,6 +372,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
         <button data-status="all">Alle</button>
         <button data-status="active">Favoriten</button>
         <button data-status="removed">Entfernt</button>
+        <button data-status="inbox" title="Neue Favoriten, noch nicht im Archiv">📥</button>
       </div>
       <button id="delRemoved" class="danger hidden" style="width:100%;margin-top:8px"></button>
       <label class="check"><input type="checkbox" id="fUnread"> Nur ungelesene</label>
@@ -384,6 +400,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
   </aside>
 
   <main>
+    <div id="inboxBanner" class="hidden"></div>
     <div id="bar"><span id="count"></span><span id="chips" class="row"></span></div>
     <div id="grid"></div>
     <div id="sentinel" style="height:1px"></div>
@@ -804,6 +821,61 @@ function onWarnClick(e){
   if ((el = e.target.closest('[data-warnshow]'))) { const [t, n] = el.dataset.warnshow.split('\u0001'); closeModal(); S.f.hideWarn = false; $('#fHideWarn').checked = false; ls.set('hideWarn', false); return addChip(t, n); }
 }
 
+// ---------- Eingang: neue Favoriten erst prüfen/lesen, dann ins Archiv aufnehmen
+// g.inbox = 'new' (wartet) | 'rejected' (verworfen, auf nhentai noch zu entfernen); ohne Feld = im Archiv
+const inboxOn = () => ls.get('inboxOn', true);
+const isArch = g => !g.inbox;
+function inboxCounts(){ let n = 0, rj = 0; for (const g of S.all.values()) { if (g.inbox === 'new') n++; else if (g.inbox === 'rejected') rj++; } return {n, rj}; }
+async function inboxAccept(ids){
+  const now = Date.now(), ch = [];
+  for (const id of ids) { const g = S.all.get(id); if (g?.inbox) { delete g.inbox; g.added_at = now; ch.push(g); } }
+  if (!ch.length) return;
+  try { await DB.put(ch); } catch { return; }
+  Rel.invalidate(); render(); toast(`✓ ${ch.length} ins Archiv aufgenommen`);
+}
+async function inboxReject(ids){
+  const ch = [];
+  for (const id of ids) { const g = S.all.get(id); if (g && g.inbox !== 'rejected') { g.inbox = 'rejected'; g.user.mark = false; ch.push(g); } }
+  if (!ch.length) return;
+  try { await DB.put(ch); } catch { return; }
+  Rel.invalidate(); render();
+  toast(`✗ ${ch.length} verworfen – bitte noch auf nhentai aus den Favoriten entfernen. Beim nächsten Sync verschwinden sie dann ganz.`, 6000);
+}
+async function inboxUndo(id){ const g = S.all.get(id); if (!g) return; g.inbox = 'new'; try { await DB.put([g]); } catch { return; } render(); }
+function renderInboxBanner(){
+  const {n, rj} = inboxCounts(), el = $('#inboxBanner'), hb = $('#btnInbox');
+  hb.classList.toggle('hidden', !(n || rj)); hb.querySelector('b').textContent = n || rj;
+  hb.classList.toggle('primary2', !!n);
+  const inView = S.f.status === 'inbox';
+  if (inView) {
+    el.innerHTML = `<b>📥 Eingang</b> – neue Favoriten, die noch nicht im Archiv sind. Lies sie hier und nimm sie dann auf (✓) oder verwirf sie (✗).${rj ? `<br><span class="muted">${rj} verworfen und noch in deinen nhentai-Favoriten – dort entfernen, dann verschwinden sie beim nächsten Sync. <button class="linkbtn" data-inboxlinks>Links anzeigen</button></span>` : ''}
+      ${n ? `<div class="row" style="margin-top:8px"><button data-inboxall="accept">✓ Alle ${n} aufnehmen</button><button data-inboxall="reject" class="danger">✗ Alle ${n} verwerfen</button></div>` : ''}`;
+    el.classList.remove('hidden');
+  } else if (n) {
+    el.innerHTML = `📥 <b>${n} neue Favoriten</b> warten im Eingang darauf, gelesen und ins Archiv aufgenommen zu werden. <button class="linkbtn" data-inboxgo>Zum Eingang ›</button>`;
+    el.classList.remove('hidden');
+  } else el.classList.add('hidden');
+}
+function gotoInbox(){ S.f.status = 'inbox'; document.querySelectorAll('#segStatus button').forEach(b => b.classList.toggle('on', b.dataset.status === 'inbox')); render(); scrollTo(0, 0); }
+function onInboxBanner(e){
+  let el;
+  if (e.target.closest('[data-inboxgo]')) return gotoInbox();
+  if ((el = e.target.closest('[data-inboxall]'))) {
+    const ids = [...S.all.values()].filter(g => g.inbox === 'new').map(g => g.id);
+    if (el.dataset.inboxall === 'accept') { if (confirm(`Alle ${ids.length} Einträge aus dem Eingang ins Archiv aufnehmen?`)) inboxAccept(ids); }
+    else if (confirm(`Alle ${ids.length} Einträge aus dem Eingang verwerfen?`)) inboxReject(ids);
+    return;
+  }
+  if (e.target.closest('[data-inboxlinks]')) {
+    const rj = [...S.all.values()].filter(g => g.inbox === 'rejected');
+    $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>✗ Verworfen – auf nhentai entfernen</h2>
+      <p class="muted" style="font-size:13px;margin-top:-6px">Öffne die Seiten und entferne sie dort aus deinen Favoriten (♥). Beim nächsten Sync verschwinden sie dann aus dem Tool. „↺“ holt einen Eintrag zurück in den Eingang.</p>
+      <div class="rvsec">${rj.map(g => `<div class="rv" style="grid-template-columns:44px 1fr auto;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}</small></span>
+        <span class="row" style="gap:6px"><a class="markbtn" href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;border:1px solid var(--line);border-radius:8px;padding:4px 9px">nhentai ↗</a><button class="markbtn" data-inboxundo="${esc(g.id)}" title="Zurück in den Eingang">↺</button></span></div>`).join('')}</div>`;
+    fillThumbs($('#modalBody')); showModal('inboxlinks');
+  }
+}
+
 // Zusatzfilter aus der Statistik (Bewertung, Seitenzahl, Upload-Jahr, Monat …)
 function extraOk(g, x){
   const mk = ts => { const d = new Date(ts); return d.getFullYear() * 12 + d.getMonth(); };
@@ -823,7 +895,8 @@ function extraOk(g, x){
 function computeView(){
   const f = S.f, terms = parseQ(f.q), v = [];
   for (const g of S.all.values()) {
-    if (f.status !== 'all' && g.status !== f.status) continue;
+    if (f.status === 'inbox') { if (!g.inbox) continue; }
+    else { if (g.inbox) continue; if (f.status !== 'all' && g.status !== f.status) continue; }
     if (f.unread && g.user.read) continue;
     if (f.marked && !g.user.mark) continue;
     if (f.hideWarn && warnOf(g).length) continue;
@@ -838,6 +911,7 @@ function computeView(){
   }
   if (f.list && S.sort === 'fav') { const ord = new Map(orderedList(f.list).filter(it => it.id).map((it, i) => [it.id, i])); v.sort((a, b) => (ord.get(a.id) ?? 1e9) - (ord.get(b.id) ?? 1e9)); }
   else v.sort(sorter());
+  if (f.status === 'inbox') v.sort((a, b) => (a.inbox === 'rejected') - (b.inbox === 'rejected'));   // Verworfene ans Ende
   S.view = v;
   listPlaceholders();
 }
@@ -853,7 +927,9 @@ function card(g){
   const lang = langCode(g), r = g.user.rating||0;
   if (g.user.mark) d.classList.add('marked');
   const wn = warnOf(g);
-  d.innerHTML = `<div class="cover">${wn.length ? `<span class="wbadge" title="⚠ Warnung: ${esc(wn.join(', '))}">⚠</span>` : ''}<button class="cmark ${g.user.mark ? 'on' : ''}" data-cmark title="Markieren · Shift+Klick: ganzen Bereich markieren">🏷</button><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
+  if (g.inbox) d.classList.add('inbox-' + g.inbox);
+  const ib = g.inbox === 'new' ? `<span class="ibadge">📥 neu</span><span class="iacts"><button data-iacc title="Ins Archiv aufnehmen">✓</button><button data-irej title="Verwerfen">✗</button></span>` : g.inbox === 'rejected' ? '<span class="ibadge rej">✗ verworfen</span>' : '';
+  d.innerHTML = `<div class="cover">${ib}${wn.length ? `<span class="wbadge" title="⚠ Warnung: ${esc(wn.join(', '))}">⚠</span>` : ''}<button class="cmark ${g.user.mark ? 'on' : ''}" data-cmark title="Markieren · Shift+Klick: ganzen Bereich markieren">🏷</button><div class="ph">${esc(dispTitle(g))}</div><img alt="" decoding="async">
     <div class="badges">${lang?`<span class="b">${lang}</span>`:''}<span class="b">${g.pages||'?'} S.</span>${r?`<span class="b star">${'★'.repeat(r)}</span>`:''}${g.user.read?'<span class="b read">✓</span>':''}${g.user.mark?'<span class="b mk">🏷</span>':''}${g.status==='removed'?'<span class="b rm">entfernt</span>':''}${S.chMap?.get(g.id) ? `<span class="b">Ch. ${esc(S.chMap.get(g.id))}</span>` : ''}</div></div>
     <div class="t">${esc(dispTitle(g))}</div><div class="s">${esc((g.tags.artist||[]).join(', ') || (g.tags.group||[]).join(', ') || (g.tags.parody||[]).join(', ') || '–')}</div>`;
   const img = d.querySelector('img'); img.loading = 'lazy'; loadImg(img, 'cover', g);
@@ -878,7 +954,8 @@ function checkMore(){
 }
 function renderBar(){
   const fo = document.querySelector('#sort option[value="fav"]'); if (fo) fo.textContent = S.f.list ? '📋 Listen-Reihenfolge' : 'Favoriten-Reihenfolge (neueste zuerst)';
-  const total = [...S.all.values()].filter(g => S.f.status === 'all' || g.status === S.f.status).length;
+  const total = [...S.all.values()].filter(g => S.f.status === 'inbox' ? !!g.inbox : !g.inbox && (S.f.status === 'all' || g.status === S.f.status)).length;
+  renderInboxBanner();
   $('#count').textContent = S.view.length === total ? `${total} Einträge` : `${S.view.length} von ${total}`;
   const chips = S.f.chips.map((c,i) => `<span class="chip ${c.mode}" data-chip="${i}" title="Klick: einschließen ↔ ausschließen"><span class="t">${esc(TYPE_KEY[c.type])}</span><span class="nm">${esc(c.name)}</span><span class="x" data-chipx="${i}">✕</span></span>`);
   if (S.f.list) chips.unshift(`<span class="chip inc" data-listx><span class="t">liste</span>${esc(listLabel(S.f.list))}<span class="x">✕</span></span><button class="linkbtn" data-ordlist="${esc(S.f.list)}">⇅ Liste ordnen</button>`);
@@ -908,7 +985,7 @@ function renderLists(){
 }
 function renderStat(){
   let a = 0, r = 0, read = 0;
-  for (const g of S.all.values()) { if (g.status === 'active') a++; else r++; if (g.user.read) read++; }
+  for (const g of S.all.values()) { if (g.inbox) continue; if (g.status === 'active') a++; else r++; if (g.user.read) read++; }
   renderStorageInfo();
   const cov = [...S.all.keys()].filter(id => Covers.has(id)).length;
   const mk = [...S.all.values()].filter(g => g.user.mark).length; $('#markCount').textContent = mk ? `(${mk})` : '';
@@ -1258,6 +1335,7 @@ const Rel = {
     if (!this.dirty && this.cache) return this.cache;
     const info = new Map();
     for (const g of S.all.values()) {
+      if (g.inbox === 'rejected') continue;
       const bases = this.baseTitles(g);
       const fulls = [...new Set(bases.map(b => this.norm(b)).filter(x => x.length >= 3))];
       const ser = bases.map(b => ({...this.series(this.norm(this.mainPart(b))), disp:b})).filter(s => s.key.length >= 4);
@@ -1522,7 +1600,8 @@ const Sug = {
     return null;
   },
   pool(){
-    const base = $('#sgView')?.checked ? S.view : [...S.all.values()];
+    if (S.sugMode === 'inbox') return [...S.all.values()].filter(g => g.inbox === 'new');
+    const base = ($('#sgView')?.checked ? S.view : [...S.all.values()]).filter(isArch);
     return base.filter(g => (g.status === 'active' || $('#sgRemoved')?.checked) && !(S.f.hideWarn && warnOf(g).length));
   },
   pick(arr, mode){
@@ -1534,6 +1613,7 @@ const Sug = {
   },
   lastReadAt: g => g.user.last_read_at || 0,
   modes: {
+    inbox(){ const c = Sug.pool(); return {one: Sug.pick(c, 'inbox'), n: c.length, reason: '📥 Neu im Eingang – danach aufnehmen oder verwerfen', empty: 'Der Eingang ist leer.'}; },
     random(){ const c = Sug.pool().filter(g => !Sug.blocker(g)); return {one: Sug.pick(c, 'random'), n: c.length, reason: 'Zufällig aus deinem Archiv'}; },
     unread(){ const c = Sug.pool().filter(g => !Sug.readOf(g.id) && !Sug.blocker(g)); return {one: Sug.pick(c, 'unread'), n: c.length, reason: 'Zufällig, noch nicht gelesen'}; },
     started(){
@@ -1596,7 +1676,8 @@ const SUG_MODES = [
   ['started', '▶', 'Angefangen', 'Werke, die du mittendrin abgebrochen hast'],
   ['taste', '⭐', 'Passt zu deinen Lieblingen', 'Ungelesenes mit Tags & Künstlern deiner ★4–5-Werke'],
   ['artist', '🎨', 'Mehr vom Künstler', 'Ungelesenes vom Künstler deines zuletzt gelesenen Werks'],
-  ['again', '🔁', 'Nochmal lesen', 'Gut bewertete Werke, die länger her sind']
+  ['again', '🔁', 'Nochmal lesen', 'Gut bewertete Werke, die länger her sind'],
+  ['inbox', '📥', 'Aus dem Eingang', 'Neue Favoriten, die noch auf dich warten']
 ];
 function showSuggest(mode){
   if (mode) S.sugMode = mode;
@@ -1667,7 +1748,7 @@ function showStats(){
   if (!S.statType) S.statType = 'tag';
   if (!S.statSort) S.statSort = 'count';
   const onlyView = ls.get('stView', false);
-  const all = (onlyView ? S.view : [...S.all.values()]);
+  const all = (onlyView ? S.view : [...S.all.values()]).filter(isArch);
   const act = all.filter(g => g.status === 'active'), N = all.length;
   const read = all.filter(g => g.user.read), started = all.filter(g => !g.user.read && (g.user.last_page || 0) > 1);
   const rated = all.filter(g => g.user.rating), avgR = rated.length ? rated.reduce((s, g) => s + g.user.rating, 0) / rated.length : 0;
@@ -1793,6 +1874,8 @@ function openDetail(id){
     <div>
       <h2>${esc(g.title_english || dispTitle(g))}</h2>
       ${g.title_japanese ? `<div class="jp">${esc(g.title_japanese)}</div>` : ''}
+      ${g.inbox === 'new' ? `<div class="warnbox inboxbox">📥 <b>Im Eingang</b> – noch nicht im Archiv.<br><button class="primary" data-iacc>✓ Ins Archiv aufnehmen</button><button data-irej>✗ Verwerfen</button></div>`
+        : g.inbox === 'rejected' ? `<div class="warnbox">✗ <b>Verworfen</b> – entferne es noch <a href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer">auf nhentai</a> aus deinen Favoriten; beim nächsten Sync verschwindet es dann.<br><button data-iundo>↺ Zurück in den Eingang</button><button data-iacc>✓ Doch aufnehmen</button></div>` : ''}
       ${g.status === 'removed' ? `<div class="warnbox">Nicht mehr in deinen nhentai-Favoriten (seit ${fmtTs(g.removed_at)}) – bleibt aber in deinem Archiv.<br><button data-reactivate>Kennzeichnung aufheben</button><button data-delete class="danger">Aus Archiv löschen</button></div>` : ''}
       ${(w => w.length ? `<div class="warnbox warnred">⚠ <b>Warnung:</b> ${w.map(esc).join(', ')}</div>` : '')(warnOf(g))}
       <div class="meta"><a href="https://nhentai.net/g/${esc(g.id)}/" target="_blank" rel="noopener noreferrer">#${esc(g.id)} auf nhentai ↗</a><span>${g.pages||'?'} Seiten</span><span>Upload: ${fmtDate(g.upload_date)}</span><span>Im Archiv seit ${fmtTs(g.added_at)}</span></div>
@@ -1820,7 +1903,7 @@ function navDetail(d){
   const n = S.view[i + d]; if (n) openDetail(n.id);
 }
 
-function onModalClick(e){
+async function onModalClick(e){
   const t = e.target;
   if (t.closest('[data-x]')) return closeModal();
   if (S.modal === 'detail') {
@@ -1836,6 +1919,9 @@ function onModalClick(e){
     if ((el = t.closest('[data-gopen]'))) return openDetail(el.dataset.gopen);
     if ((el = t.closest('[data-read]'))) return openReader(g.id, +el.dataset.read);
     if ((el = t.closest('[data-nav]'))) return navDetail(+el.dataset.nav);
+    if (t.closest('[data-iacc]')) { await inboxAccept([g.id]); return openDetail(g.id); }
+    if (t.closest('[data-irej]')) { await inboxReject([g.id]); return openDetail(g.id); }
+    if (t.closest('[data-iundo]')) { await inboxUndo(g.id); return openDetail(g.id); }
     if (t.closest('[data-warnedit]')) { S.warnEdit = !S.warnEdit; const y = $('#modal').scrollTop; openDetail(g.id); $('#modal').scrollTop = y; return; }
     if ((el = t.closest('[data-tag]'))) {
       if (S.warnEdit) { toggleWarn(el.dataset.tag, el.dataset.name); const y = $('#modal').scrollTop; openDetail(g.id); $('#modal').scrollTop = y; return; }
@@ -1858,6 +1944,7 @@ function onModalClick(e){
   if (S.modal === 'listedit') onListEditClick(e);
   if (S.modal === 'suggest') onSuggestClick(e);
   if (S.modal === 'warn') onWarnClick(e);
+  if (S.modal === 'inboxlinks') { const el = e.target.closest('[data-inboxundo]'); if (el) { await inboxUndo(el.dataset.inboxundo); el.closest('.rv').remove(); } }
   if (S.modal === 'stats') onStatsClick(e);
   if (S.modal === 'listname' && t.closest('[data-lnsave]')) return saveListName();
   if (t.closest('[data-renlist]') && S.modal === 'listedit') return showListNameDialog(t.closest('[data-renlist]').dataset.renlist);
@@ -1977,6 +2064,8 @@ function showReaderEnd(){
     <div class="lbl">Wie fandest du es?</div>
     <div class="stars" style="font-size:34px;justify-content:center;margin-bottom:12px">${[1,2,3,4,5].map(i => `<span data-rstar="${i}" class="${i <= (u.rating||0) ? 'on' : ''}">★</span>`).join('')}</div>
     <label class="check" style="justify-content:center;margin-bottom:16px"><input type="checkbox" data-rendread ${u.read ? 'checked' : ''}> Gelesen</label>
+    ${g.inbox === 'new' ? `<div class="inboxbox" style="border-radius:10px;padding:10px;margin-bottom:12px"><div class="lbl">📥 Noch im Eingang – behalten?</div><div class="row" style="justify-content:center"><button class="primary" data-riacc>✓ Ins Archiv aufnehmen</button><button data-rirej>✗ Verwerfen</button></div></div>`
+      : g.inbox === 'rejected' ? '<div class="muted" style="margin-bottom:12px">✗ Verworfen – auf nhentai noch aus den Favoriten entfernen.</div>' : ''}
     ${n ? `<button class="primary" data-rnext="${esc(n.id)}" style="width:100%;margin-bottom:8px">▶ Nächster Teil: ${esc(dispTitle(n))}<br><small style="font-weight:400;opacity:.85">${esc(nx.ctx)}${n.user.read ? ' · schon gelesen' : ''}</small></button>` : ''}
     <div class="row" style="justify-content:center"><button data-rback>‹ Zurück zur letzten Seite</button><button data-rdetail>Details</button><button data-rclose>Schließen</button></div>
   </div>`;
@@ -2120,14 +2209,14 @@ function showReview(rv){
     <div class="muted" style="font-size:13px;margin-bottom:12px">Geprüft wurden nur deine 🏷 markierten Einträge${rv.markCheck.partial ? ' (abgebrochen – nicht alle)' : ''}. Nicht mehr favorisierte verlieren beim Übernehmen ihre Markierung, noch favorisierte bleiben markiert.</div>
     ${rv.markCheck.still.length ? `<div class="rvsec"><div class="rvhead"><b>⭐ Noch in deinen Favoriten (${rv.markCheck.still.length})</b></div><div class="rvlist">${rv.markCheck.still.slice(0, MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}</small></span></div>`).join('')}</div></div>` : ''}` : ''}
   ${!rv.favIds && !rv.markCheck && S.all.size ? `<div class="muted" style="font-size:13px;margin-bottom:12px">Diese Datei enthält keine vollständige Favoritenliste, daher wird nicht geprüft, ob etwas entfernt wurde.</div>` : ''}
-  ${n ? `<div class="rvsec"><div class="rvhead"><b>🆕 Neu (${n})</b><button data-sel="new:1">Alle</button><button data-sel="new:0">Keine</button></div><div class="rvlist">${rv.news.slice(0,MAXROWS).map(g => rvRow(g,'data-new',true)).join('')}${more(n)}</div></div>` : ''}
+  ${n ? `<div class="rvsec"><div class="rvhead"><b>🆕 Neu (${n})${inboxOn() && !rv.fromFile ? ' <span class="muted" style="font-weight:400;font-size:12.5px">→ kommen in den 📥 Eingang</span>' : ''}</b><button data-sel="new:1">Alle</button><button data-sel="new:0">Keine</button></div><div class="rvlist">${rv.news.slice(0,MAXROWS).map(g => rvRow(g,'data-new',true)).join('')}${more(n)}</div></div>` : ''}
   ${c ? `<div class="rvsec"><div class="rvhead"><b>✏️ Geändert (${c})</b><button data-sel="chg:1">Alle übernehmen</button><button data-sel="chg:0">Alle ablehnen</button></div>
      <div class="more" style="border-top:none">Haken = Änderung übernehmen. Abgelehnte Änderungen werden gemerkt und beim nächsten Import nicht erneut gefragt, solange sie gleich bleiben.</div>
      <div class="rvlist">${rv.changes.slice(0,MAXROWS).map(ch => rvRow(ch.old,'data-chg',true,diffHtml(ch.diff))).join('')}${more(c)}</div></div>` : ''}
   ${r ? `<div class="rvsec"><div class="rvhead"><b>💔 Nicht mehr auf nhentai favorisiert (${r})</b>
      <select data-rmmode><option value="mark">Behalten, als „entfernt“ kennzeichnen</option><option value="keep">Behalten, nicht kennzeichnen</option></select></div>
      <div class="more" style="border-top:none">Diese Einträge bleiben in deinem Archiv – inklusive Bewertung, Notizen und Listen. Löschen kannst du sie nur selbst im Detailfenster.</div>
-     <div class="rvlist">${rv.removed.slice(0,MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}${g.user.notes ? ' · hat Notizen' : ''}</small></span></div>`).join('')}${more(r)}</div></div>` : ''}
+     <div class="rvlist">${rv.removed.slice(0,MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}${g.inbox ? ' · aus dem Eingang – wird entfernt' : ''}${g.user.rating ? ' · ' + '★'.repeat(g.user.rating) : ''}${g.user.notes ? ' · hat Notizen' : ''}</small></span></div>`).join('')}${more(r)}</div></div>` : ''}
   ${nothing ? '<p>Keine Änderungen gefunden – dein Archiv ist aktuell. 🎉</p>' : ''}
   <div class="row foot"><button data-x>Abbrechen</button><button class="primary" data-apply>${nothing ? 'OK' : 'Übernehmen'}</button></div>`;
   document.querySelectorAll('#modalBody img[data-gid]').forEach(img => { const g = rv.imgs.get(img.dataset.gid) || S.all.get(img.dataset.gid); img.loading = 'lazy'; if (g) loadImg(img, 'cover', g); });
@@ -2164,8 +2253,11 @@ async function applyReview(){
     } else { r.ignored_sig = sig(ch.neu); rej++; }
     put.set(r.id, r);
   }
-  const newRecs = rv.news.filter(g => rv.newSel.has(g.id)).map(g => ({...g, status:'active', added_at:now, updated_at:now, user:defUser()}));
-  if (rv.rmMode === 'mark') for (const g of rv.removed) put.set(g.id, {...cur(g.id), status:'removed', removed_at:now});
+  const toInbox = inboxOn() && !rv.fromFile;
+  const newRecs = rv.news.filter(g => rv.newSel.has(g.id)).map(g => ({...g, status:'active', added_at:now, updated_at:now, user:defUser(), ...(toInbox ? {inbox:'new'} : {})}));
+  // Nicht mehr favorisiert: Archiv-Einträge kennzeichnen, Eingangs-Einträge (nie aufgenommen) ganz entfernen
+  for (const g of rv.removed) if (g.inbox && rv.rmMode !== 'keep') del.push(g.id);
+  if (rv.rmMode === 'mark') for (const g of rv.removed) if (!g.inbox) put.set(g.id, {...cur(g.id), status:'removed', removed_at:now});
   if (rv.markCheck) for (const g of rv.markCheck.gone) { const r = cur(g.id); if (r) put.set(g.id, {...r, user:{...r.user, mark:false}}); }
   for (const id of rv.reactivated) { const r = {...cur(id), status:'active'}; delete r.removed_at; put.set(id, r); }
   if (rv.favIds) {
@@ -2184,6 +2276,7 @@ async function applyReview(){
   } catch (err) { alert('Speichern fehlgeschlagen: ' + err); return; }
   for (const [id,r] of put) S.all.set(id, r);
   for (const id of del) S.all.delete(id);
+  if (del.length) Covers.remove(del);
   S.meta.lastImport = now; saveMeta(); Rel.invalidate();
   closeModal(); rebuildDatalist(); render();
   const parts = [];
@@ -2216,7 +2309,7 @@ async function handleFiles(files){
       any = true;
     }
   }
-  if (any) showReview(buildReview({galleries:[...gal.values()], favIds, errors}));
+  if (any) { const rv = buildReview({galleries:[...gal.values()], favIds, errors}); rv.fromFile = true; showReview(rv); }
 }
 
 /* ---------- Sync über die API ---------- */
@@ -2468,6 +2561,7 @@ function showHelp(){
     <li><b>Reader</b>: ← → / A D / Leertaste blättern, Klick links = zurück, rechts = weiter, F = Breite/Höhe, Esc = schließen. Die Lesestelle wird gemerkt.</li>
     <li><b>Detailfenster</b>: ← → springt zum vorherigen/nächsten Eintrag.</li>
     <li><b>🏷 Markieren</b>: Im Detailfenster oder in „Reihen &amp; Duplikate“ Einträge markieren (z. B. Duplikate, die du auf nhentai entfernst). Unter 🔄 Sync → „Markierte prüfen“ wird dann nur für diese nachgefragt.</li>
+    <li><b>📥 Eingang</b>: Neue Favoriten aus dem Sync landen zuerst im Eingang (📥 oben bzw. links unter Status) und zählen noch nicht zum Archiv. Lies sie im Tool und nimm sie auf (✓) oder verwirf sie (✗). Verworfene entfernst du auf nhentai aus den Favoriten – beim nächsten Sync verschwinden sie dann. Abschaltbar im Menü ⋯.</li>
     <li><b>⚠ Warn-Tags</b>: Im Detailfenster „⚠ Warnungen bearbeiten“ und Tags anklicken (oder ⚠ neben einem Tag unter „Häufigste“, oder Menü ⋯ → Warn-Tags verwalten). Betroffene Werke zeigen ⚠ auf dem Cover; links lassen sie sich ausblenden.</li>
     <li><b>📊 Statistiken</b> (Menü ⋯ oder unten in der Seitenleiste): Lesequote, Bewertungen, häufigste Tags/Künstler mit Lesequote und Ø Bewertung, Seitenzahlen, Upload-Jahre, Lese-Aktivität, Listen. Optional nur für die aktuelle Ansicht.</li>
     <li><b>✨ Vorschlag</b> (oben oder Taste Z): zufällig (ungelesen), in Reihe weiterlesen, angefangene, passend zu deinen Lieblingen, mehr vom Künstler, nochmal lesen. Werke, deren Vorgänger in einer Reihe du noch nicht gelesen hast, werden bei Zufallsvorschlägen übersprungen.</li>
@@ -2483,6 +2577,7 @@ function showHelp(){
 function bind(){
   $('#btnSync').onclick = $('#emptySync').onclick = showSyncDialog;
   $('#btnSuggest').onclick = () => showSuggest();
+  $('#btnInbox').onclick = gotoInbox; $('#inboxBanner').onclick = onInboxBanner;
   $('#btnStats').onclick = showStats; $('#btnRel').onclick = () => showRelations(); $('#btnBackup').onclick = exportBackup;
   $('#statMore').onclick = showStats;
   $('#emptyImport').onclick = () => $('#fileImport').click();
@@ -2513,6 +2608,7 @@ function bind(){
     if (a === 'stats') showStats();
     if (a === 'delremoved') deleteRemoved();
     if (a === 'warn') showWarnDialog();
+    if (a === 'inboxtoggle') { const on = !inboxOn(); ls.set('inboxOn', on); toast(on ? '📥 Neue Favoriten kommen ab jetzt zuerst in den Eingang' : 'Neue Favoriten kommen ab jetzt direkt ins Archiv', 5000); }
     if (a === 'covers') {
       const on = !Covers.enabled(); ls.set('covercache', on);
       if (on) { Covers.stopped = false; Covers.enqueueMissing(); toast('Cover-Sicherung an – läuft im Hintergrund.'); }
@@ -2559,6 +2655,8 @@ function bind(){
   $('#grid').onclick = e => {
     const c = e.target.closest('.card'); if (!c || c.classList.contains('phcard')) return;
     if (e.target.closest('[data-cmark]')) { e.stopPropagation(); return cardMark(c.dataset.id, e.shiftKey); }
+    if (e.target.closest('[data-iacc]')) { e.stopPropagation(); return inboxAccept([c.dataset.id]); }
+    if (e.target.closest('[data-irej]')) { e.stopPropagation(); return inboxReject([c.dataset.id]); }
     openDetail(c.dataset.id);
   };
   $('#bulk').addEventListener('click', onBulk); $('#bulk').addEventListener('change', onBulk);
@@ -2611,6 +2709,8 @@ function bind(){
     let el; const t = e.target;
     if ((el = t.closest('[data-rstar]'))) return setReaderRating(+el.dataset.rstar);
     if (t.closest('[data-rback]')) return hideReaderEnd();
+    if (t.closest('[data-riacc]')) { inboxAccept([R.g.id]).then(showReaderEnd); return; }
+    if (t.closest('[data-rirej]')) { inboxReject([R.g.id]).then(showReaderEnd); return; }
     if (t.closest('[data-rclose]')) return closeReader();
     if (t.closest('[data-rdetail]')) { const id = R.g.id, fromSug = S.modal === 'suggest'; R.finished = false; closeReader(); if (fromSug) S.sugBack = true; return openDetail(id); }
     if ((el = t.closest('[data-rnext]'))) { const id = el.dataset.rnext, n = S.all.get(id); R.finished = false; quiet(DB.put([R.g])); replaceCard(R.g); return openReader(id, n.user.last_page > 1 && !n.user.read ? n.user.last_page : 1); }
