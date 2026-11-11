@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Favoriten-Archiv API-Bridge
 // @namespace    http://tampermonkey.net/
-// @version      4.3
+// @version      4.4
 // @description  Leitet API-Anfragen des Favoriten-Archivs an die nhentai-API v2 weiter (umgeht die CORS-Sperre des Browsers) und lädt Cover-Bilder für die lokale Sicherung. Nur GET, nur lesende Endpunkte.
 // @author       Mudkip
-// @match        https://thevizce.github.io/*
+// @match        https://thevizce.github.io/nh-favoriten/*
 // @grant        GM_xmlhttpRequest
 // @connect      nhentai.net
 // @run-at       document-start
@@ -25,7 +25,7 @@
     window.addEventListener('message', e => {
         const d = e.data;
         if (!d || typeof d !== 'object' || e.origin !== location.origin) return;
-        if (d.nhb === 'ping') return send({ nhb: 'hello', v: 4.3 });
+        if (d.nhb === 'ping') return send({ nhb: 'hello', v: 4.4 });
         if (d.nhb === 'bin') {
             if (typeof d.url !== 'string' || !ALLOWED_IMG.test(d.url)) return send({ nhb: 'res', id: d.id, status: 0, body: 'blocked' });
             return GM_xmlhttpRequest({
@@ -57,5 +57,5 @@
         });
     });
 
-    send({ nhb: 'hello', v: 4.3 });
+    send({ nhb: 'hello', v: 4.4 });
 })();

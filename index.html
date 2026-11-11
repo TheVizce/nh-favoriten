@@ -50,6 +50,7 @@ header{position:sticky;top:0;z-index:20;display:flex;gap:10px;align-items:center
 #layout{display:grid;grid-template-columns:260px 1fr;min-height:calc(100vh - 57px)}
 aside{border-right:1px solid var(--line);padding:14px;position:sticky;top:57px;height:calc(100vh - 57px);overflow:auto;background:var(--bg)}
 aside section{margin-bottom:20px}
+aside{padding-bottom:64px}   /* ☁︎-Feld des Sync unten links nicht überdecken */
 aside h3{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;display:flex;align-items:center;justify-content:space-between;gap:6px}
 aside h3 select{font-size:11px;padding:2px 6px;text-transform:none;letter-spacing:0}
 aside > section > select{width:100%}
@@ -322,10 +323,8 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
     <div id="menuPop" class="pop hidden">
       <button data-act="key">🔑 API-Key</button>
       <button data-act="details">⬇️ Fehlende Details nachladen</button>
-      <button data-act="import">📂 Datei importieren (JSON/CSV)</button>
       <button data-act="backup">💾 Backup exportieren (JSON)</button>
       <button data-act="restore">♻️ Backup einspielen</button>
-      <button data-act="csv">📄 Archiv als CSV exportieren</button>
       <button data-act="delremoved">🗑 Alle entfernten Einträge löschen</button>
       <button data-act="stats" class="only-xs">📊 Statistiken</button>
       <button data-act="relations" class="only-xs">🔗 Reihen &amp; Duplikate finden</button>
@@ -393,7 +392,6 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
       <div id="facets"></div>
     </section>
     <div class="stat" id="stat"></div>
-    <button class="linkbtn" id="statMore" style="padding:4px 0;font-size:12.5px">📊 Mehr Statistiken ›</button>
     <div class="stat" id="storageInfo" style="border:none;padding-top:4px"></div>
     <div class="stat" id="coverProg" style="border:none;padding-top:4px"></div>
     <div class="stat" id="detailProg" style="border:none;padding-top:4px"></div>
@@ -411,8 +409,8 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
         <li>Hier oben auf <b>🔄 Sync</b> klicken, Key einfügen und <b>„Komplett abgleichen“</b> wählen.</li>
         <li>Im Prüf-Dialog bestätigen – fertig.</li>
       </ol>
-      <p class="muted">Alternativ kannst du eine CSV/JSON aus deinen bisherigen Skripten importieren (Menü ⋯ oder Drag &amp; Drop).</p>
-      <div class="row"><button class="primary" id="emptySync">🔄 Sync einrichten</button><button id="emptyImport">Datei importieren</button><button id="emptyHelp">Anleitung</button></div>
+      <p class="muted">Ein Backup kannst du über Menü ⋯ → „Backup einspielen“ oder per Drag &amp; Drop zurückholen.</p>
+      <div class="row"><button class="primary" id="emptySync">🔄 Sync einrichten</button><button id="emptyHelp">Anleitung</button></div>
     </div>
   </main>
 </div>
@@ -432,10 +430,9 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 </div>
 
 <div id="modal" class="overlay hidden"><div class="dialog" id="modalBody"></div></div>
-<input type="file" id="fileImport" accept=".json,.csv,application/json,text/csv" multiple hidden>
 <input type="file" id="fileRestore" accept=".json,application/json" hidden>
 <div id="toast"></div>
-<div id="drop" class="hidden">Datei hier ablegen zum Importieren</div>
+<div id="drop" class="hidden">Backup-Datei hier ablegen zum Einspielen</div>
 
 <!-- GitHub-Sync (gemeinsam für alle Tools, Einstellungen auf der Startseite) -->
 <script src="/startseite/sync-v1.js"></script>
@@ -482,6 +479,8 @@ const ls = {
     }
     localStorage.setItem(LS_PREFIX + 'prefs-migrated', '1');
   } catch {}
+  // Übernahme ist erledigt → alte Schlüssel ohne Präfix entfernen (laut Startseite/TOOLS nutzt sie kein anderes Tool)
+  try { for (const k of Object.keys(valid)) if (localStorage.getItem(LS_PREFIX + 'prefs-migrated')) localStorage.removeItem(k); } catch {}
 })();
 
 const S = {
@@ -980,7 +979,7 @@ function renderLists(){
   lb.classList.toggle('hidden', !anyJa); lb.textContent = ls.get('listLang', 'en') === 'ja' ? 'JP' : 'EN';
   $('#listSort').value = ls.get('listSort', 'name');
   $('#lists').innerHTML = S.meta.lists.length ? sortedLists(cnt).map(l =>
-    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}" title="${esc(listAlt(l))}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(listLabel(l))}</span><span style="white-space:nowrap"><span class="n">${cnt.get(l)||0}</span><span class="ren" data-ordlist="${esc(l)}" title="Reihenfolge &amp; Platzhalter">⇅</span><span class="ren" data-renlist="${esc(l)}" title="Namen bearbeiten (EN/JP)">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
+    `<div class="facet ${S.f.list===l?'on':''}" data-list="${esc(l)}" title="${esc(listAlt(l))}"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isSeriesList(l) ? '<span title="Reihe – Vorschläge halten die Reihenfolge ein">📚 </span>' : ''}${esc(listLabel(l))}</span><span style="white-space:nowrap"><span class="n">${cnt.get(l)||0}</span><span class="ren" data-ordlist="${esc(l)}" title="Reihenfolge &amp; Platzhalter">⇅</span><span class="ren" data-renlist="${esc(l)}" title="Namen bearbeiten (EN/JP)">✎</span><span class="del" data-dellist="${esc(l)}" title="Liste löschen">✕</span></span></div>`).join('')
     : '<div class="muted" style="font-size:13px">Noch keine Listen. Im Detailfenster kannst du Einträge zu Listen hinzufügen.</div>';
 }
 function renderStat(){
@@ -1180,6 +1179,10 @@ function phCard(label){
   return d;
 }
 
+// GitHub-Sync eingerichtet? (nur lesen – die Einstellung gehört der Startseite)
+function syncOn(){ try { const c = JSON.parse(localStorage.getItem('toolsync.config') || 'null'); return !!(c && c.token); } catch { return false; } }
+const syncNote = () => syncOn() ? '\n\n☁︎ Der GitHub-Sync ist eingerichtet: Das gilt auch für deine anderen Geräte.' : '';
+
 /* ---------- Markieren & Sammelaktionen ---------- */
 function setMark(g, on){ if (g.user.mark === on) return false; g.user.mark = on; return true; }
 function afterMarkChange(changed){ if (changed.length) quiet(DB.put(changed)); changed.forEach(replaceCard); renderStat(); if (S.f.marked) render(); }
@@ -1236,7 +1239,7 @@ async function onBulk(e){
   }
   if (act === 'delete') {
     const gs = markedList(), act_ = gs.filter(g => g.status === 'active').length;
-    if (!confirm(`${gs.length} markierte Einträge endgültig aus dem Archiv löschen?\nBewertung, Notizen und Listen-Zuordnung gehen verloren.${act_ ? `\n\nAchtung: ${act_} davon sind noch in deinen nhentai-Favoriten und kommen beim nächsten Sync als „neu“ zurück.` : ''}`)) return;
+    if (!confirm(`${gs.length} markierte Einträge endgültig aus dem Archiv löschen?\nBewertung, Notizen und Listen-Zuordnung gehen verloren.${act_ ? `\n\nAchtung: ${act_} davon sind noch in deinen nhentai-Favoriten und kommen beim nächsten Sync als „neu“ zurück.` : ''}${syncNote()}`)) return;
     return deleteEntries(gs.map(g => g.id));
   }
 }
@@ -1251,7 +1254,7 @@ function deleteRemoved(){
   const gs = [...S.all.values()].filter(g => g.status === 'removed');
   if (!gs.length) return toast('Keine entfernten Einträge vorhanden.');
   const withData = gs.filter(g => g.user.rating || g.user.notes || g.user.lists.length).length;
-  if (!confirm(`Alle ${gs.length} Einträge löschen, die nicht mehr in deinen nhentai-Favoriten sind?${withData ? `\n\n${withData} davon haben Bewertung, Notizen oder Listen – das geht verloren.` : ''}\n\nTipp: Vorher ein Backup machen (Menü ⋯).`)) return;
+  if (!confirm(`Alle ${gs.length} Einträge löschen, die nicht mehr in deinen nhentai-Favoriten sind?${withData ? `\n\n${withData} davon haben Bewertung, Notizen oder Listen – das geht verloren.` : ''}\n\nTipp: Vorher ein Backup machen (💾).${syncNote()}`)) return;
   deleteEntries(gs.map(g => g.id));
 }
 function renameList(old, name){
@@ -1552,14 +1555,8 @@ function relBlock(g){
 
 /* ---------- Vorschläge: Was lese ich als Nächstes? ---------- */
 // Reihen-Listen: Flag in S.meta.listInfo[l].series. Ohne Angabe wird geraten (Platzhalter, Kapitel oder überwiegend nummerierte Titel).
-function isSeriesList(l){
-  const f = S.meta.listInfo?.[l]?.series;
-  if (typeof f === 'boolean') return f;
-  const items = orderedList(l), ids = items.filter(it => it.id);
-  if (!ids.length) return false;
-  if (items.some(it => it.ph || it.ch)) return true;
-  return ids.filter(it => Rel.numOf(S.all.get(it.id)) !== null).length >= Math.max(2, ids.length * 0.6);
-}
+// Eine Liste ist nur dann eine Reihe, wenn das ausdrücklich eingestellt ist (Reihen-Dialog setzt es automatisch)
+function isSeriesList(l){ return S.meta.listInfo?.[l]?.series === true; }
 function setSeriesList(l, on){ S.meta.listInfo = S.meta.listInfo || {}; S.meta.listInfo[l] = {...(S.meta.listInfo[l] || {}), series: on}; saveMeta(); }
 
 const Sug = {
@@ -1994,7 +1991,7 @@ async function openReader(id, page){
   }
   if (!g.media_id && !(g.page_urls||[]).length && !(g.page_paths||[]).length) { toast('Für diesen Eintrag fehlen Bilddaten – bitte einmal mit dem Skript aktualisieren.'); return; }
   if (!g.pages) { toast('Seitenzahl unbekannt – bitte mit dem Skript aktualisieren.'); return; }
-  R.g = g; R.page = Math.min(Math.max(1, page||1), g.pages); R.finished = false; hideReaderEnd(); readerStars();
+  R.g = g; R.page = Math.min(Math.max(1, page||1), g.pages); R.finished = false; R.savedAt = Date.now(); hideReaderEnd(); readerStars();
   $('#reader').classList.remove('hidden'); document.body.style.overflow = 'hidden';
   $('#rTitle').textContent = dispTitle(g); $('#rMode').value = R.mode;
   $('#rRange').max = g.pages;
@@ -2031,8 +2028,10 @@ function setPage(p){
   R.page = p;
   $('#rpos').textContent = `${p} / ${R.g.pages}`; $('#rRange').value = p;
   const u = R.g.user; u.last_page = p; u.last_read_at = Date.now();
-  if (p >= R.g.pages && !u.read) { u.read = true; toast('✓ Als gelesen markiert'); }
-  saveSoon(R.g);
+  // Lesestelle nur alle 30 s speichern (sonst löst jedes Umblättern einen GitHub-Abgleich aus);
+  // beim Schließen, am Ende und beim Verlassen der Seite wird sofort gespeichert
+  if (p >= R.g.pages && !u.read) { u.read = true; toast('✓ Als gelesen markiert'); return saveSoon(R.g); }
+  if (Date.now() - (R.savedAt || 0) > 30000) { R.savedAt = Date.now(); saveSoon(R.g); }
 }
 function go(d){
   if (R.mode === 'single') {
@@ -2057,7 +2056,7 @@ function nextPart(g){
   return null;
 }
 function showReaderEnd(){
-  const g = R.g; if (!g) return; R.finished = true;
+  const g = R.g; if (!g) return; R.finished = true; saveSoon(g);
   const nx = nextPart(g), n = nx && S.all.get(nx.id), u = g.user;
   $('#rEnd').innerHTML = `<div class="rendcard">
     <div class="sgwhy">Ende erreicht</div><h3 style="margin:4px 0 14px">${esc(dispTitle(g))}</h3>
@@ -2095,44 +2094,6 @@ function normDate(s){
   const d = new Date(s); return isNaN(d) ? '' : d.toISOString().slice(0,10);
 }
 function normTags(t){ const o = {}; for (const k of TAG_TYPES) o[k] = [...new Set((t?.[k]||[]).map(s => String(s).trim()).filter(Boolean))]; return o; }
-function normExport(g){
-  if (!g || !g.id) return null;
-  const r = {id:String(g.id), media_id:String(g.media_id||''), title_english:g.title_english||'', title_japanese:g.title_japanese||'', title_pretty:g.title_pretty||'',
-    tags:normTags(g.tags), pages:+g.pages||0, upload_date:normDate(g.upload_date), cover_url:fixUrl(g.cover_url),
-    page_exts:Array.isArray(g.page_exts) ? g.page_exts : [], default_ext:g.default_ext||'', src:'v3'};
-  if (Array.isArray(g.page_urls) && g.page_urls.length) r.page_urls = g.page_urls;
-  return r;
-}
-function parseCSV(text){
-  text = text.replace(/^\uFEFF/, '');
-  const firstLine = text.slice(0, text.indexOf('\n') >>> 0);
-  const delim = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ',';
-  const rows = []; let row = [], f = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) { if (c === '"') { if (text[i+1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
-    else if (c === '"') q = true;
-    else if (c === delim) { row.push(f); f = ''; }
-    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i+1] === '\n') i++; row.push(f); f = ''; rows.push(row); row = []; }
-    else f += c;
-  }
-  if (f !== '' || row.length) { row.push(f); rows.push(row); }
-  const head = (rows.shift() || []).map(h => h.trim());
-  return rows.filter(r => r.some(x => x !== '')).map(r => Object.fromEntries(head.map((h,i) => [h, r[i] ?? ''])));
-}
-function normCsv(row){
-  const id = String(row.id||'').trim() || (String(row.url||'').match(/\/g\/(\d+)/)||[])[1];
-  if (!id) return null;
-  const split = s => String(s||'').split(',').map(x => x.trim()).filter(Boolean);
-  const cover = fixUrl(row.cover);
-  const firstImg = String(row.images||'').split('|')[0].trim();
-  const media = (cover.match(/\/galleries\/(\d+)\//)||[])[1] || (firstImg.match(/\/galleries\/(\d+)\//)||[])[1] || '';
-  return {id, media_id:media, title_english:row.title_english||'', title_pretty:row.title_pretty||row.title_english||'', title_japanese:row.title_japanese||'',
-    tags:normTags({parody:split(row.parodies), character:split(row.characters), tag:split(row.tags), artist:split(row.artists), group:split(row.groups), language:split(row.languages), category:split(row.categories)}),
-    pages:parseInt(row.pages,10)||0, upload_date:normDate(row.uploaded_date), cover_url:cover, page_exts:[],
-    default_ext:(firstImg.match(/\.([a-z0-9]+)$/i)||[])[1]||'', src:'csv'};
-}
-
 /* ---------- Import: Vergleich ---------- */
 const sig = g => JSON.stringify([TAG_TYPES.map(t => [...(g.tags[t]||[])].sort()), g.pages||0]);
 const normHost = u => String(u||'').replace(/\/\/t\d*\./, '//t.');
@@ -2178,7 +2139,6 @@ function buildReview(batch){
       if (g.status === 'active' && !set.has(g.id)) rv.removed.push(g);
       else if (g.status === 'removed' && set.has(g.id)) rv.reactivated.push(g.id);
     }
-    rv.missing = rv.favIds.filter(id => !S.all.has(id) && !seen.has(id));
   }
   rv.newSel = new Set(rv.news.map(g => g.id));
   rv.chgSel = new Set(rv.changes.map(c => c.neu.id));
@@ -2203,13 +2163,11 @@ function showReview(rv){
   const more = (len) => len > MAXROWS ? `<div class="more">… und ${len - MAXROWS} weitere (werden entsprechend der Auswahl „Alle/Keine“ übernommen)</div>` : '';
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Import prüfen</h2>
   ${rv.markCheck ? '' : `<div class="sum"><span class="pill ok">${n} neu</span><span class="pill warn">${c} geändert</span>${rv.favIds ? `<span class="pill bad">${r} nicht mehr favorisiert</span>` : ''}${rv.reactivated.length ? `<span class="pill ok">${rv.reactivated.length} wieder favorisiert</span>` : ''}<span class="pill">${rv.unchanged} unverändert</span></div>`}
-  ${rv.missing.length ? `<div class="warnbox">⚠ ${rv.missing.length} Favoriten stehen in der Datei nur als ID (ohne Details) und fehlen im Archiv. Im Skript „Bekannte IDs vergessen“ klicken und dann erneut „Neue holen“ – dann kommen sie mit.</div>` : ''}
-  ${rv.errors.length ? `<div class="warnbox">⚠ ${rv.errors.length} Galerien konnte das Skript nicht laden (IDs: ${esc(rv.errors.slice(0,20).join(', '))}${rv.errors.length > 20 ? ' …' : ''}). Einfach später nochmal „Neue holen“.</div>` : ''}
   ${rv.markCheck ? `<div class="sum"><span class="pill bad">${rv.markCheck.gone.length} nicht mehr favorisiert</span><span class="pill">${rv.markCheck.still.length} noch favorisiert</span>${rv.reactivated.length ? `<span class="pill ok">${rv.reactivated.length} wieder favorisiert</span>` : ''}</div>
     <div class="muted" style="font-size:13px;margin-bottom:12px">Geprüft wurden nur deine 🏷 markierten Einträge${rv.markCheck.partial ? ' (abgebrochen – nicht alle)' : ''}. Nicht mehr favorisierte verlieren beim Übernehmen ihre Markierung, noch favorisierte bleiben markiert.</div>
     ${rv.markCheck.still.length ? `<div class="rvsec"><div class="rvhead"><b>⭐ Noch in deinen Favoriten (${rv.markCheck.still.length})</b></div><div class="rvlist">${rv.markCheck.still.slice(0, MAXROWS).map(g => `<div class="rv" style="grid-template-columns:44px 1fr;cursor:default"><span class="thumb"><img alt="" data-gid="${esc(g.id)}"></span><span><b>${esc(dispTitle(g))}</b><small>#${esc(g.id)}</small></span></div>`).join('')}</div></div>` : ''}` : ''}
   ${!rv.favIds && !rv.markCheck && S.all.size ? `<div class="muted" style="font-size:13px;margin-bottom:12px">Diese Datei enthält keine vollständige Favoritenliste, daher wird nicht geprüft, ob etwas entfernt wurde.</div>` : ''}
-  ${n ? `<div class="rvsec"><div class="rvhead"><b>🆕 Neu (${n})${inboxOn() && !rv.fromFile ? ' <span class="muted" style="font-weight:400;font-size:12.5px">→ kommen in den 📥 Eingang</span>' : ''}</b><button data-sel="new:1">Alle</button><button data-sel="new:0">Keine</button></div><div class="rvlist">${rv.news.slice(0,MAXROWS).map(g => rvRow(g,'data-new',true)).join('')}${more(n)}</div></div>` : ''}
+  ${n ? `<div class="rvsec"><div class="rvhead"><b>🆕 Neu (${n})${inboxOn() ? ' <span class="muted" style="font-weight:400;font-size:12.5px">→ kommen in den 📥 Eingang</span>' : ''}</b><button data-sel="new:1">Alle</button><button data-sel="new:0">Keine</button></div><div class="rvlist">${rv.news.slice(0,MAXROWS).map(g => rvRow(g,'data-new',true)).join('')}${more(n)}</div></div>` : ''}
   ${c ? `<div class="rvsec"><div class="rvhead"><b>✏️ Geändert (${c})</b><button data-sel="chg:1">Alle übernehmen</button><button data-sel="chg:0">Alle ablehnen</button></div>
      <div class="more" style="border-top:none">Haken = Änderung übernehmen. Abgelehnte Änderungen werden gemerkt und beim nächsten Import nicht erneut gefragt, solange sie gleich bleiben.</div>
      <div class="rvlist">${rv.changes.slice(0,MAXROWS).map(ch => rvRow(ch.old,'data-chg',true,diffHtml(ch.diff))).join('')}${more(c)}</div></div>` : ''}
@@ -2253,17 +2211,21 @@ async function applyReview(){
     } else { r.ignored_sig = sig(ch.neu); rej++; }
     put.set(r.id, r);
   }
-  const toInbox = inboxOn() && !rv.fromFile;
+  const toInbox = inboxOn();
   const newRecs = rv.news.filter(g => rv.newSel.has(g.id)).map(g => ({...g, status:'active', added_at:now, updated_at:now, user:defUser(), ...(toInbox ? {inbox:'new'} : {})}));
   // Nicht mehr favorisiert: Archiv-Einträge kennzeichnen, Eingangs-Einträge (nie aufgenommen) ganz entfernen
   for (const g of rv.removed) if (g.inbox && rv.rmMode !== 'keep') del.push(g.id);
   if (rv.rmMode === 'mark') for (const g of rv.removed) if (!g.inbox) put.set(g.id, {...cur(g.id), status:'removed', removed_at:now});
   if (rv.markCheck) for (const g of rv.markCheck.gone) { const r = cur(g.id); if (r) put.set(g.id, {...r, user:{...r.user, mark:false}}); }
   for (const id of rv.reactivated) { const r = {...cur(id), status:'active'}; delete r.removed_at; put.set(id, r); }
+  // Reihenfolge: bestehende Einträge behalten ihre Nummer (sonst würde jeder neue Favorit alle Einträge
+  // neu schreiben und beim GitHub-Sync Änderungen anderer Geräte überdecken). Neue kommen davor.
   if (rv.favIds) {
-    const idx = new Map(rv.favIds.map((id,i) => [id,i]));
-    for (const r of newRecs) r.fav_index = idx.get(r.id) ?? 0;
-    for (const [id,i] of idx) { const r = cur(id); if (r && r.fav_index !== i && !del.includes(id)) put.set(id, {...r, fav_index:i}); }
+    let min = Infinity; for (const g of S.all.values()) min = Math.min(min, g.fav_index ?? 0);
+    if (min === Infinity) min = 0;
+    const pos = new Map(rv.favIds.map((id,i) => [id,i]));
+    const sorted = newRecs.slice().sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9));
+    sorted.forEach((r, i) => r.fav_index = S.all.size ? min - sorted.length + i : i);
   } else {
     let min = Infinity; for (const g of S.all.values()) min = Math.min(min, g.fav_index ?? 0);
     if (min === Infinity) min = 0;
@@ -2289,27 +2251,12 @@ async function applyReview(){
   Covers.enqueue(newRecs.map(r => r.id));
 }
 
+// Drag & Drop: nur noch Backup-Dateien (JSON) – neue Favoriten kommen über den nhentai-Sync
 async function handleFiles(files){
-  const gal = new Map(); let favIds = null; const errors = []; let any = false;
-  for (const f of files) {
-    let text; try { text = await f.text(); } catch { continue; }
-    const isJson = f.name.toLowerCase().endsWith('.json') || text.trimStart().startsWith('{');
-    if (isJson) {
-      let d; try { d = JSON.parse(text); } catch { toast(`${f.name}: kein gültiges JSON`); continue; }
-      if (d.format === 'nh-fav-archiv-backup') { await restoreBackup(d); return; }
-      if (d.format !== 'nh-fav-export' || !Array.isArray(d.galleries)) { toast(`${f.name}: unbekanntes Format`); continue; }
-      d.galleries.forEach(g => { const n = normExport(g); if (n) gal.set(n.id, n); });
-      if (Array.isArray(d.favorite_ids)) favIds = d.favorite_ids.map(String);
-      if (Array.isArray(d.errors)) errors.push(...d.errors.map(String));
-      any = true;
-    } else {
-      const rows = parseCSV(text);
-      if (!rows.length || !('id' in rows[0] || 'url' in rows[0])) { toast(`${f.name}: CSV nicht erkannt`); continue; }
-      rows.forEach(r => { const n = normCsv(r); if (n) gal.set(n.id, n); });
-      any = true;
-    }
-  }
-  if (any) { const rv = buildReview({galleries:[...gal.values()], favIds, errors}); rv.fromFile = true; showReview(rv); }
+  const f = files[0]; if (!f) return;
+  let d; try { d = JSON.parse(await f.text()); } catch { return toast(`${f.name}: keine gültige Backup-Datei`); }
+  if (d.format !== 'nh-fav-archiv-backup') return toast(`${f.name}: keine Backup-Datei des Favoriten-Archivs`);
+  restoreBackup(d);
 }
 
 /* ---------- Sync über die API ---------- */
@@ -2509,6 +2456,12 @@ function initSync(){
       S.meta = meta;
       S.all = new Map(list.map(g => [g.id, g]));
       Rel.invalidate(); rebuildDatalist(); render();
+      // Reader und Detailfenster dürfen nicht mit der alten Kopie weiterspeichern
+      if (R.g) { const n = S.all.get(R.g.id); if (n) { n.user.last_page = Math.max(n.user.last_page || 0, R.page || 0); R.g = n; readerStars(); } }
+      if (S.modal === 'detail') {
+        if (!S.all.has(S.detailId)) closeModal();
+        else if (!document.activeElement?.closest?.('#modalBody input, #modalBody textarea')) { const y = $('#modal').scrollTop; openDetail(S.detailId); $('#modal').scrollTop = y; }
+      }
       return true;
     }
   });
@@ -2521,7 +2474,7 @@ function exportBackup(){
 }
 async function restoreBackup(d){
   if (!Array.isArray(d.galleries)) return toast('Backup ungültig');
-  if (!confirm(`Backup vom ${new Date(d.exported_at).toLocaleString('de-DE')} mit ${d.galleries.length} Einträgen einspielen?\n\nDas ERSETZT dein aktuelles Archiv (${S.all.size} Einträge).`)) return;
+  if (!confirm(`Backup vom ${new Date(d.exported_at).toLocaleString('de-DE')} mit ${d.galleries.length} Einträgen einspielen?\n\nDas ERSETZT dein aktuelles Archiv (${S.all.size} Einträge). Einträge, die im Backup fehlen, werden gelöscht.${syncOn() ? '\n\n☁︎ Der GitHub-Sync ist eingerichtet: Das Backup wird zum neuen Stand auf allen Geräten – fehlende Einträge werden auch dort gelöscht.' : ''}`)) return;
   const list = d.galleries.filter(g => g && g.id).map(g => ({...g, id:String(g.id), tags:normTags(g.tags), user:{...defUser(), ...(g.user||{})}, status:g.status||'active'}));
   const meta = {lists:[], ...(d.meta||{})};
   try { await DB.replaceAll(list, meta); }
@@ -2530,17 +2483,6 @@ async function restoreBackup(d){
   S.all = new Map(list.map(g => [g.id, g]));
   Rel.invalidate(); rebuildDatalist(); render(); toast(`✓ Backup eingespielt (${list.length} Einträge)`);
 }
-function exportCSV(){
-  const cols = ['id','url','cover','title_english','title_japanese','title_pretty','parodies','characters','tags','artists','groups','languages','categories','pages','uploaded_date','status','rating','read','lists','notes'];
-  const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
-  const rows = [...S.all.values()].sort((a,b) => (a.fav_index??0) - (b.fav_index??0)).map(g => [
-    g.id, `https://nhentai.net/g/${g.id}/`, g.cover_url, g.title_english, g.title_japanese, g.title_pretty,
-    ...['parody','character','tag','artist','group','language','category'].map(t => (g.tags[t]||[]).join(', ')),
-    g.pages, g.upload_date, g.status, g.user.rating||'', g.user.read ? 'ja' : '', (g.user.lists||[]).join(', '), g.user.notes
-  ].map(q).join(','));
-  download(`favoriten-archiv_${today()}.csv`, '\uFEFF' + [cols.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8');
-}
-
 /* ---------- Anleitung ---------- */
 function showHelp(){
   $('#modalBody').innerHTML = `<button class="close icon" data-x>✕</button><h2>Anleitung</h2><div class="help">
@@ -2579,10 +2521,7 @@ function bind(){
   $('#btnSuggest').onclick = () => showSuggest();
   $('#btnInbox').onclick = gotoInbox; $('#inboxBanner').onclick = onInboxBanner;
   $('#btnStats').onclick = showStats; $('#btnRel').onclick = () => showRelations(); $('#btnBackup').onclick = exportBackup;
-  $('#statMore').onclick = showStats;
-  $('#emptyImport').onclick = () => $('#fileImport').click();
   $('#emptyHelp').onclick = showHelp;
-  $('#fileImport').onchange = e => { handleFiles([...e.target.files]); e.target.value = ''; };
   $('#fileRestore').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     try { const d = JSON.parse(await f.text()); if (d.format !== 'nh-fav-archiv-backup') return toast('Das ist keine Backup-Datei'); restoreBackup(d); } catch { toast('Datei konnte nicht gelesen werden'); } };
 
@@ -2592,7 +2531,6 @@ function bind(){
     const a = e.target.closest('[data-act]')?.dataset.act; if (!a) return;
     $('#menuPop').classList.add('hidden');
     if (a === 'key') showKeyDialog();
-    if (a === 'import') $('#fileImport').click();
     if (a === 'details') {
       if (!Api.key()) return showKeyDialog();
       const ids = [...S.all.values()].filter(g => !(g.page_paths||[]).length).map(g => g.id);
@@ -2602,7 +2540,6 @@ function bind(){
     }
     if (a === 'backup') exportBackup();
     if (a === 'restore') $('#fileRestore').click();
-    if (a === 'csv') exportCSV();
     if (a === 'help') showHelp();
     if (a === 'relations') showRelations();
     if (a === 'stats') showStats();
@@ -2621,7 +2558,7 @@ function bind(){
     }
     if (a === 'discreet') { const on = document.body.classList.toggle('discreet'); ls.set('discreet', on); toast(on ? 'Diskret-Modus an (Hover zeigt Cover)' : 'Diskret-Modus aus'); }
     if (a === 'wipe') {
-      if (!confirm('Wirklich das GESAMTE Archiv löschen – inkl. Bewertungen, Notizen und Listen?')) return;
+      if (!confirm('Wirklich das GESAMTE Archiv löschen – inkl. Bewertungen, Notizen und Listen?' + syncNote())) return;
       if (!confirm('Letzte Warnung. Vorher ein Backup gemacht?')) return;
       try { await DB.clear(); } catch { return; }
       await Covers.clearAll();
@@ -2774,8 +2711,9 @@ function bind(){
   initSync();
   setTimeout(() => Covers.enqueueMissing(), 4000);   // erst nach dem Laden der sichtbaren Cover starten
   // Offene Änderungen sofort sichern, wenn der Tab geschlossen oder in den Hintergrund gelegt wird
-  addEventListener('pagehide', flushSaves);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSaves(); });
+  const flushAll = () => { if (R.g) saveSoon(R.g); flushSaves(); };
+  addEventListener('pagehide', flushAll);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
 })();
 </script>
 </body>

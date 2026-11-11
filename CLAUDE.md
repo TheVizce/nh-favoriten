@@ -4,6 +4,10 @@
 - IndexedDB `nh-fav-archiv`, localStorage-Präfix `nhfav-`. Dazu ein Tampermonkey-Skript.
 - Sync: Ordner `nh-favoriten/` (32 Teildateien). `collections: g (array), meta (map)`. Cover und API-Key bleiben lokal.
 - `SYNC.changed()` steckt in `DB.run` (`tx.oncomplete` bei readwrite außer Store `covers`).
+- `fav_index`: bestehende Einträge nie umnummerieren (sonst schreibt jeder nhentai-Sync alle Einträge neu und überdeckt Änderungen anderer Geräte). Neue bekommen Werte unter dem bisherigen Minimum.
+- Lesestelle (`last_page`) wird gedrosselt gespeichert (30 s, Ende, Schließen, Seite verlassen) – nicht bei jedem Umblättern.
+- Nach `apply` aus dem Sync müssen offene Ansichten (Reader `R.g`, Detailfenster) auf die neuen Objekte zeigen.
+- Listen sind nur Reihen, wenn `meta.listInfo[name].series === true` (kein Raten).
 - Eingang: `g.inbox` = `'new'` (wartet) / `'rejected'` (verworfen); ohne Feld = im Archiv. Statistik, Vorschläge und Hauptansicht zeigen nur Archiv-Einträge.
 
 ## Gemeinsame Regeln für alle Tools unter thevizce.github.io
